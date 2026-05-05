@@ -1,0 +1,22 @@
+{
+  "name": "orchestrator-hello-world-test",
+  "version": "1.0.0",
+  "description": "Test scaffold for AI-Implement integration — Node.js/Express hello-world app",
+  "type": "module",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "test": "node --test test/**"
+  },
+  "dependencies": {
+    "ejs": "^3.1.10",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}
