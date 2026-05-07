@@ -150,12 +150,11 @@ ${PLANNING_CONTEXT}
 
 ## Repo context
 
-<!-- Customise this section for your repo -->
-
-- **Stack:** _e.g. Node.js 20, TypeScript, PostgreSQL, Vitest_
-- **Run tests:** _e.g. `npm test`_
-- **Run linting / formatting:** _e.g. `npm run lint`_
-- **Key conventions:** _e.g. follow patterns in existing files; no new dependencies without good reason_
+- **Stack:** Node.js 22+, TypeScript, Next.js 15 (App Router, React 19 Server Components by default), Tailwind CSS 3, shadcn/ui, Vitest + React Testing Library.
+- **Run tests:** `npm test` (single run) or `npx vitest` (watch mode). Filter by name with `npx vitest run -t '<pattern>'`.
+- **Run linting / formatting:** `npm run lint` (`next lint`). There is no separate formatter.
+- **Build:** `npm run build` must succeed — Next.js fails the build on TypeScript errors and on misuse of Server vs Client Components.
+- **Key conventions:** Follow patterns in existing files. Pages live in `app/<route>/page.tsx`; HTTP endpoints in `app/api/<route>/route.ts`. Styling is Tailwind-only — compose utility classes and use the `cn()` helper from `lib/utils.ts` for conditional combinations. Add `"use client"` only when a component needs hooks, browser APIs, or event handlers. shadcn components are copied into `components/ui/` (not imported from a package) — add new ones with `npx shadcn@latest add <component>` rather than hand-writing styled primitives. Use the `@/*` path alias instead of relative imports. No new dependencies without a clear reason — this scaffold is intentionally small.
 
 ---
 

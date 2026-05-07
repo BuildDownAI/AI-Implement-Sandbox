@@ -77,11 +77,9 @@ ${DEPENDENCIES}
 
 ## Repo context
 
-<!-- Customise this section for your repo -->
-
-- **Stack:** _e.g. Node.js 20, TypeScript, PostgreSQL, Vitest_
-- **Key conventions:** _e.g. follow patterns in existing files; all DB access via the repository layer_
-- **Areas to always check:** _e.g. src/models/, src/api/, migrations/_
+- **Stack:** Node.js 22+, TypeScript, Next.js 15 (App Router, React 19 Server Components by default), Tailwind CSS 3, shadcn/ui, Vitest + React Testing Library.
+- **Key conventions:** Follow patterns in existing files. Pages live in `app/<route>/page.tsx`; HTTP endpoints in `app/api/<route>/route.ts`. Styling is Tailwind-only — compose utility classes and use the `cn()` helper from `lib/utils.ts` for conditional combinations. Add `"use client"` only when a component needs hooks, browser APIs, or event handlers. shadcn components are copied into `components/ui/` (not imported from a package) — add new ones with `npx shadcn@latest add <component>`. Use the `@/*` path alias instead of relative imports. No new dependencies without a clear reason — this scaffold is intentionally small.
+- **Areas to always check:** `app/`, `components/ui/`, `lib/`, `test/`, `tailwind.config.ts`, `components.json`.
 
 ---
 

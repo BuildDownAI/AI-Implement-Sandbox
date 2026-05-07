@@ -1,19 +1,40 @@
 {
   "name": "orchestrator-hello-world-test",
   "version": "1.0.0",
-  "description": "Test scaffold for AI-Implement integration — Node.js/Express hello-world app",
-  "type": "module",
-  "main": "src/app.js",
+  "description": "Test scaffold for AI-Implement integration — Next.js + shadcn hello-world app",
+  "private": true,
   "scripts": {
-    "start": "node src/app.js",
-    "test": "node --test test/**"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run"
   },
   "dependencies": {
-    "ejs": "^3.1.10",
-    "express": "^5.1.0"
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@radix-ui/react-slot": "^1.1.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.5",
+    "lucide-react": "^0.468.0"
   },
   "devDependencies": {
-    "supertest": "^7.1.0"
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "^15.1.0",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   },
   "engines": {
     "node": ">=22"
