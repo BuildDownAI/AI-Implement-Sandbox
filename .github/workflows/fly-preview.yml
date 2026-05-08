@@ -1,0 +1,71 @@
+name: Fly.io preview deployment for PR
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened, closed]
+        paths-ignore:
+            - "**.md"
+            - "test/**"
+
+concurrency:
+    group: fly-preview-pr-${{ github.event.pull_request.number }}
+    cancel-in-progress: true
+
+permissions:
+    pull-requests: write
+    contents: read
+
+jobs:
+    preview:
+        runs-on: ubuntu-latest
+
+        env:
+            # an organization scoped FLY token is necessary to create and tear down preview deployments
+            FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_PREVIEW }}
+            FLY_ORG: ${{ vars.FLY_ORG }}
+            APP_NAME: orchestrator-hello-world-test-pr-${{ github.event.pull_request.number }}
+        
+        steps:
+            - uses: actions/checkout@v4
+            - uses: superfly/flyctl-actions/setup-flyctl@master
+
+            - name: Deploy preview app
+              if: github.event.action != 'closed'
+              run: |
+                # create app if not existing
+                flyctl status --app "$APP_NAME" 2>/dev/null \
+                    || flyctl apps create "$APP_NAME" --org "$FLY_ORG"
+            
+                # mirror secrets from production app
+                # flyctl secrets set --app "$APP_NAME" \
+                #    DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+                #    API_KEY="${{ secrets.API_KEY }}"
+                echo "(no app secrets to mirror currently exist)"
+
+                # deploy without high availability on a single machine (low resources)
+                flyctl deploy \
+                    --local-only \
+                    --app "$APP_NAME" \
+                    --ha=false
+            
+            - name: Post preview URL comment on deployment
+              if: github.event.action != 'closed'
+              uses: marocchino/sticky-pull-request-comment@v2
+              with:
+                header: fly-preview-pr
+                message: |
+                    ✨ Preview deployed to https://${{ env.APP_NAME }}.fly.dev
+
+                    Commit: `${{ github.event.pull_request.head.sha }}`
+
+            - name: Teardown preview app
+              if: github.event.action == 'closed'
+              run: flyctl apps destroy "$APP_NAME" --yes || true
+
+            - name: Update comment on teardown
+              if: github.event.action == 'closed'
+              uses: marocchino/sticky-pull-request-comment@v2
+              with:
+                header: fly-preview-pr
+                message: |
+                    Preview deployment has been torn down (PR closed).
