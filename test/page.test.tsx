@@ -21,4 +21,12 @@ describe("Home page", () => {
       screen.getByRole("button", { name: /switch to dark mode/i }),
     ).toBeInTheDocument();
   });
+
+  it("has a link to the users login page", () => {
+    render(<Page />);
+    expect(screen.getByRole("link", { name: /log in/i })).toHaveAttribute(
+      "href",
+      "/users",
+    );
+  });
 });

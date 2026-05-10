@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function Home() {
@@ -10,6 +11,12 @@ export default function Home() {
         to confirm that the scaffolding runs correctly — no real application
         logic lives here.
       </p>
+      <Link
+        href="/users"
+        className="text-sm underline underline-offset-4 hover:text-muted-foreground"
+      >
+        Log in
+      </Link>
       <ThemeToggle />
     </main>
   );
