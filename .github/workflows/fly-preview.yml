@@ -37,10 +37,9 @@ jobs:
                     || flyctl apps create "$APP_NAME" --org "$FLY_ORG"
             
                 # mirror secrets from production app
-                # flyctl secrets set --app "$APP_NAME" \
-                #    DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-                #    API_KEY="${{ secrets.API_KEY }}"
-                echo "(no app secrets to mirror currently exist)"
+                flyctl secrets set --app "$APP_NAME" \
+                    SITE_URL="https://${APP_NAME}.fly.dev" \
+                    --stage
 
                 # deploy without high availability on a single machine (low resources)
                 flyctl deploy \

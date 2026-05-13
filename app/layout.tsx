@@ -3,8 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: 'Test Website',
-    template: '%s | Test Website',
+    default: 'AI-Implement Sandbox',
+    template: '%s | AI-Implement Sandbox',
   },
   description: 'AI-Implement integration test scaffold',
 };
