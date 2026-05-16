@@ -19,7 +19,7 @@ When implementing changes here, prefer **minimal, conventional** edits. Adding h
 - Run in watch mode: `npx vitest`
 - Filter by test name: `npx vitest run -t 'renders login mode by default'`
 - `npm run lint` — run `next lint`
-- `npm run db:types` — regenerate [lib/supabase/database.types.ts](lib/supabase/database.types.ts) from the linked Supabase schema. **Run after every migration.**
+- `npm run db:types` — regenerate [lib/supabase/database.types.ts](lib/supabase/database.types.ts) from the linked Supabase schema. **Run after every migration — including ones that only add/modify Postgres functions or triggers, not just tables.** New RPC functions only appear in the typed client after re-generation.
 - Add a new shadcn component: `npx shadcn@latest add <name>` (e.g. `button`, `card`, `dialog`) — files land in [components/ui/](components/ui/)
 
 ## Architecture
@@ -63,9 +63,12 @@ The middleware entry point is [middleware.ts](middleware.ts) at the repo root. A
 | GitHub OAuth        | `/login`                                  | `signInWithGithub`                          | `/auth/callback` (exchangeCodeForSession) |
 | Password reset request | `/forgot-password`                       | `resetPassword` ([app/(auth)/forgot-password/actions.ts](app/(auth)/forgot-password/actions.ts)) | `/auth/confirm` (verifyOtp, type=recovery) |
 | Password reset complete | `/reset-password`                      | `updatePassword` ([app/(auth)/reset-password/actions.ts](app/(auth)/reset-password/actions.ts)) | — |
+| **Change email** (logged in) | `/profile`                          | `updateEmail` ([app/(app)/profile/actions.ts](app/(app)/profile/actions.ts)) | `/auth/confirm` (verifyOtp, type=email_change) — **double confirmation: both current and new addresses must click** |
+| **Change password** (logged in) | `/profile`                       | `updatePassword` ([app/(app)/profile/actions.ts](app/(app)/profile/actions.ts)) | — (immediate, no email round-trip) |
+| **Delete account** | `/profile`                                | `deleteAccount` ([app/(app)/profile/actions.ts](app/(app)/profile/actions.ts)) — calls `supabase.rpc("delete_current_user")` then `signOut()` | — |
 | Logout              | (Server Action button, any page)         | `logout`                                    | — |
 
-Email templates in the Supabase dashboard must use the PKCE format (`{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=<type>&next=<path>`) — the default `{{ .ConfirmationURL }}` template doesn't pass the `token_hash` and the handler will fail.
+Email templates in the Supabase dashboard must use the PKCE format with **`{{ .RedirectTo }}`** rather than `{{ .SiteURL }}` so the URL is dynamic per-environment (`http://localhost:3000/auth/confirm?...` in local dev, the production URL in deploys, the preview URL in PR previews). Template: `{{ .RedirectTo }}/auth/confirm?token_hash={{ .TokenHash }}&type=<type>&next=<path>`. The action passes `emailRedirectTo: ${SITE_URL}` which `{{ .RedirectTo }}` substitutes. The default `{{ .ConfirmationURL }}` template doesn't pass `token_hash` and the handler will fail.
 
 ### Domain entity: `projects`
 
@@ -93,9 +96,38 @@ The primary domain entity, intentionally minimal:
 - **`Input` / `Textarea`** are uncontrolled (`defaultValue` for edit, no `value` for create)
 - **`Select`** is forced controlled by Radix — pair with a `<input type="hidden" name="x">` mirror so the value reaches FormData
 - **Hidden `<input type="hidden" name="id">`** on edit / delete forms carries the row id to the action
+- **File inputs** (`<input type="file" name="..." accept="...">`) submit as `File` objects in FormData. The action reads via `formData.get(name) as File | null`, guards on `file.size > 0` (empty file inputs still submit a zero-byte File), validates MIME + size, then uploads via `supabase.storage.from(bucket).upload(...)`. Client-side `onChange` validation is for UX only — the action and the bucket's MIME allowlist are the security boundary.
 - **zod validates server-side** in the action; `required` + `maxLength` on inputs provide browser-level first-line defense
 - **Errors via URL search params** (`redirect("/path?error=...")` in the action; form reads via `useSearchParams()`); inline `useActionState` errors deferred to Block 4
 - **Destructive confirmations use AlertDialog** with a plain submit `Button` inside the form (not `AlertDialogAction` — see [delete-project-button.tsx](app/(app)/projects/[projectId]/delete-project-button.tsx) for why)
+- **Sectioned settings pages** (e.g. `/profile`): one Server Component page renders multiple independent `<form>` Card sections, each submitting to its own action. Conditional sections wrap multiple Cards in a `<>...</>` fragment — the fragment is DOM-invisible, so cards remain direct flex children of `<main>`. Note: every section reads `useSearchParams()`, so errors from one section currently surface in *every* section's banner (Block 4 will fix via `useActionState`).
+
+### Domain entity: `profiles`
+
+The user account entity, in a 1:1 relationship with `auth.users`:
+
+- **Schema**: [supabase/migrations/00003_profiles_table.sql](supabase/migrations/00003_profiles_table.sql) — `user_id` is both PK and FK to `auth.users(id) on delete cascade`. Columns: `display_name` (≤50 char), `avatar_path` (≤500 char, references file in Supabase Storage), timestamps.
+- **Auto-creation**: [supabase/migrations/00005_profiles_trigger.sql](supabase/migrations/00005_profiles_trigger.sql) — a `SECURITY DEFINER` Postgres function `handle_new_user()` fires after every INSERT on `auth.users`. Creates the matching profile row for both email/password *and* OAuth signups, with no app code involved. Backfilled existing users via direct INSERT in the SQL editor.
+- **RLS**: [supabase/migrations/00004_profiles_rls.sql](supabase/migrations/00004_profiles_rls.sql) — SELECT + UPDATE only (INSERT handled by trigger; DELETE handled by cascade). Both policies filter to `auth.uid() = user_id`.
+- **Storage**: an `avatars` bucket with public reads + per-user-folder writes. Path convention `<user_id>/<filename>`. Per-row Storage policies scope writes via `(storage.foldername(name))[1] = auth.uid()::text`. Bucket-level MIME allowlist (PNG/JPEG/WebP/GIF) + 5 MB cap. **Setup is dashboard-only — not in migrations.** See README for the policy templates.
+- **Self-delete**: [supabase/migrations/00006_delete_user_function.sql](supabase/migrations/00006_delete_user_function.sql) — a `SECURITY DEFINER` RPC `delete_current_user()` lets a user delete *themselves* from `auth.users` without exposing a service-role key. Cascading FKs clean up `profiles` and `projects` automatically. Called via `supabase.rpc("delete_current_user")` from the `deleteAccount` action; **note that adding/changing Postgres functions requires re-running `npm run db:types`** so the RPC name appears in the typed client.
+- **Reads**: [app/(app)/profile/queries.ts](app/(app)/profile/queries.ts) — `getProfile()` returns `Profile | null` for the current user (RLS handles ownership; no `user_id` filter needed in app code). The `Profile` type extends the DB row with a computed `avatar_url` field built via `supabase.storage.from("avatars").getPublicUrl(...)`.
+- **Mutations**: [app/(app)/profile/actions.ts](app/(app)/profile/actions.ts) — `updateProfile` (display name + avatar), `updateEmail` (queues a two-step email-verification flow), `updatePassword` (immediate), `deleteAccount` (RPC + signOut). zod schemas in [app/(app)/profile/schema.ts](app/(app)/profile/schema.ts).
+
+#### Profile page
+
+- `/profile` — Server Component at [app/(app)/profile/page.tsx](app/(app)/profile/page.tsx). Reads `provider` from JWT claims (`app_metadata.provider`) and conditionally renders sections:
+  - **All users**: Profile info card (display name + avatar), Danger zone card (delete account)
+  - **Email-provider users only**: Email card (change email), Password card (change password)
+  - **OAuth users**: Sign-in method card (informational; tells user to manage email/password through their OAuth provider)
+
+Conditional sections wrap multiple Cards in a `<>...</>` fragment when needed — the fragment produces no DOM output, so cards remain direct flex children of the `<main>` and inherit its `gap-6` spacing.
+
+#### Server-side avatar uploads
+
+Avatar uploads happen inside `updateProfile` Server Action — the form's `<input type="file" name="avatar" />` produces a `File` object in `FormData` which the action reads and pipes into `supabase.storage.from("avatars").upload(...)`. Flow is **browser → Next.js server → Supabase Storage**, not browser-direct. This requires Next's `experimental.serverActions.bodySizeLimit` in [next.config.mjs](next.config.mjs) bumped above the default 1 MB (currently `'8mb'`) to allow ~5 MB file uploads plus form overhead.
+
+Validation runs in three places (defense in depth): client-side `onChange` (UX feedback before submit), action-side zod + manual MIME/size checks (security boundary), Supabase Storage bucket MIME allowlist + size limit (final fallback).
 
 ### Layout, theming, and core files
 
@@ -110,10 +142,12 @@ The primary domain entity, intentionally minimal:
 
 Vitest + React Testing Library, configured in [vitest.config.ts](vitest.config.ts) (jsdom environment, `@/*` path alias). Setup file [test/setup.ts](test/setup.ts) registers `@testing-library/jest-dom` matchers.
 
-- **Client form tests** (e.g. [test/login-form.test.tsx](test/login-form.test.tsx), [test/projects-create-form.test.tsx](test/projects-create-form.test.tsx)) mock `next/navigation` via `vi.hoisted` so per-test search params can be set, and stub the Server Actions module so submission is a no-op.
-- **Server Component tests** (e.g. [test/page.test.tsx](test/page.test.tsx), [test/projects-list.test.tsx](test/projects-list.test.tsx)) mock the Supabase server client chain. Async Server Components are invoked directly: `render(await Page({ searchParams: Promise.resolve({...}) }))`.
+- **Client form tests** (e.g. [test/login-form.test.tsx](test/login-form.test.tsx), [test/projects-create-form.test.tsx](test/projects-create-form.test.tsx), [test/profile-info-form.test.tsx](test/profile-info-form.test.tsx)) mock `next/navigation` via `vi.hoisted` so per-test search params can be set, and stub the Server Actions module so submission is a no-op.
+- **Server Component tests** (e.g. [test/page.test.tsx](test/page.test.tsx), [test/projects-list.test.tsx](test/projects-list.test.tsx), [test/profile-page.test.tsx](test/profile-page.test.tsx)) mock the Supabase server client chain. Async Server Components are invoked directly: `render(await Page({ searchParams: Promise.resolve({...}) }))`. For pages that compose mocked query helpers (e.g. `getProfile`) directly, mock the helper module rather than building out the full Supabase chain.
 - The Supabase chain mock typically only needs to mock the *terminal* method (`.range`, `.maybeSingle`, `.single`). Intermediate `.from().select().order()` calls just return `this`-shaped objects pointing at the terminal mock.
-- shadcn's `Empty` component renders its title as a styled `<div>`, not an `<h*>`. Assert via `getByText`, not `getByRole("heading")`.
+- shadcn's `Empty` component renders its title as a styled `<div>`, not an `<h*>`. Assert via `getByText`, not `getByRole("heading")`. Same is true of `CardTitle`, `AlertDialogTitle`, and `DialogTitle` — they're not semantic `<h*>` elements.
+- **Dialog tests** (Radix-based components like `AlertDialog`): use the dialog's accessible name via `getByRole("alertdialog", { name: /.../ })` to verify it opened with the right title (Radix wires `AlertDialogTitle` to the dialog's `aria-labelledby`). For buttons inside vs outside the dialog with shared text, scope queries with `within(dialog).getByRole(...)` — RTL's `within` narrows lookups to a subtree.
+- **Anchored regex for `getByLabelText`**: substring matches like `/new password/i` match *every* label containing those words ("New password" *and* "Confirm new password"). RTL throws on multiple matches. Anchor with `^...$` (e.g. `/^new password$/i`) or use `{ exact: true }`.
 
 Pattern for new pages: tests live in [test/](test/) (flat — not nested next to the source). Don't bother trying to unit-test middleware, Route Handlers, or Server Actions directly without an integration-test setup; cover them via the manual verification steps in each block's plan.
 

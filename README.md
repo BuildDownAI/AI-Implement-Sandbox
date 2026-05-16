@@ -24,6 +24,7 @@ A successfully merged pull request authored by the AI agent — in response to a
 
 - **Authentication**: email/password signup + login, GitHub OAuth, email verification, password reset, logout
 - **Projects** (per-user, RLS-isolated): list (paginated), detail, create, edit, delete-with-confirmation
+- **Profile + account settings**: display name, avatar upload (via Supabase Storage), change email (with double-confirmation security), change password, delete account (via a `SECURITY DEFINER` Postgres function — no service-role key exposed to app code). Profile page conditionally renders email/password sections for email users only; OAuth users see a "managed by provider" notice instead.
 - **Dark mode toggle**
 - **Per-PR preview deploys** on Fly.io
 
@@ -72,7 +73,28 @@ For GitHub OAuth, also:
 
 The Supabase schema lives in [supabase/migrations/](supabase/migrations/) as numbered SQL files. For a fresh Supabase project, apply them in order via the Supabase dashboard → **SQL Editor** → paste each migration → Run.
 
-### 5. Generate TypeScript types from the schema
+For an existing Supabase project that has users from before the profiles migration, backfill profiles for existing users in the SQL Editor:
+```sql
+insert into profiles (user_id)
+select id from auth.users
+where id not in (select user_id from profiles);
+```
+
+### 5. Create the avatars Storage bucket
+
+Profile avatars live in a Supabase Storage bucket — this isn't covered by migrations and must be set up via the dashboard:
+
+1. **Storage → New bucket** → name `avatars`, toggle **Public bucket** on
+2. Under the bucket's settings, set **Allowed MIME types** to `image/png,image/jpeg,image/webp,image/gif` and **File size limit** to `5 MB`
+3. Add four policies on the bucket (the dashboard's policy template picker simplifies this):
+   - **SELECT** — "Anyone can view avatars": `using (true)`
+   - **INSERT** — "Users can upload their own avatar": `using ((bucket_id = 'avatars') AND ((storage.foldername(name))[1] = auth.uid()::text))`
+   - **UPDATE** — same predicate as INSERT
+   - **DELETE** — same predicate as INSERT
+
+The path convention is `<user_id>/<filename>` so the folder-name check scopes writes to the user's own folder.
+
+### 6. Generate TypeScript types from the schema
 
 ```bash
 npx supabase login
@@ -80,9 +102,9 @@ npx supabase link --project-ref <your-project-ref>
 npm run db:types
 ```
 
-This populates `lib/supabase/database.types.ts` so every Supabase query is fully type-safe. **Re-run `npm run db:types` after any future migration.**
+This populates `lib/supabase/database.types.ts` so every Supabase query is fully type-safe. **Re-run `npm run db:types` after any future migration** — including ones that add/modify Postgres functions or triggers, not just tables.
 
-### 6. Run the dev server
+### 7. Run the dev server
 
 ```bash
 npm run dev
@@ -144,6 +166,10 @@ https://orchestrator-hello-world-test-pr-*.fly.dev/**
 | `app/(app)/projects/queries.ts` | Read helpers (e.g. `getProject(id)`); also re-exports the `Project` row type |
 | `app/(app)/projects/actions.ts` | Server Actions for create/update/delete |
 | `app/(app)/projects/schema.ts` | zod schema for project input + inferred type |
+| `app/(app)/profile/` | Profile + account settings (display name, avatar, email, password, delete account) |
+| `app/(app)/profile/queries.ts` | `getProfile()` and the `Profile` type (DB row + computed `avatar_url`) |
+| `app/(app)/profile/actions.ts` | Server Actions: `updateProfile`, `updateEmail`, `updatePassword`, `deleteAccount` |
+| `app/(app)/profile/schema.ts` | zod schemas for profile, email, and password inputs |
 | `app/(auth)/login/` | Login + register form, GitHub OAuth, forgot-password link |
 | `app/(auth)/forgot-password/` | Password reset request |
 | `app/(auth)/reset-password/` | New-password form (entered via recovery email link) |

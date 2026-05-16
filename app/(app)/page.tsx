@@ -25,6 +25,9 @@ export default async function Home() {
                     <Button asChild>
                         <Link href="/projects"> View projects </Link>
                     </Button>
+                    <Button asChild variant="outline">
+                        <Link href="/profile"> View profile </Link>
+                    </Button>
                     <form action={logout}>
                         <Button type="submit" variant="outline">Log out</Button>
                     </form>
