@@ -4,89 +4,73 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { projectSchema } from "./schema";
 import { revalidatePath } from "next/cache";
+import { type FormState, toFieldErrors } from "@/lib/form-state";
 
-export async function createProject(formData: FormData) {
-    const supabase = await createClient();
-
+export async function createProject(_prevState: FormState, formData: FormData): Promise<FormState> {
     // extracts a user's ID from claims since it's not known at project creation
+    const supabase = await createClient();
     const { data: claimsData } = await supabase.auth.getClaims();
     const userId = claimsData?.claims.sub;
     if (!userId) {
         redirect("/login");
     }
 
-    const result = projectSchema.safeParse({
-        name: formData.get("name"),
-        description: formData.get("description") || undefined,
-        status: formData.get("status"),
-    });
-
+    const result = projectSchema.safeParse(Object.fromEntries(formData));
     if (!result.success) {
-        const message = result.error.issues[0]?.message ?? "Invalid input";
-        redirect(`/projects/new?error=${encodeURIComponent(message)}`);
+        return { fieldErrors: toFieldErrors(result.error) };
     }
 
     const { data, error } = await supabase.from("projects")
         .insert({ ...result.data, user_id: userId})
         .select("id")
         .single();
-
     if (error) {
-        redirect(`/projects/new?error=${encodeURIComponent(error.message)}`);
+        return { error: error.message };
     }
 
     revalidatePath("/projects");
     redirect(`/projects/${data.id}`);
 }
 
-export async function updateProject(formData: FormData) {
-    const supabase = await createClient();
-
-    const projectId = formData.get("id");
-    if (typeof projectId !== "string" || !projectId) {
-        redirect("/projects?error=Missing+project+ID");
+export async function updateProject(_prevState: FormState, formData: FormData): Promise<FormState> {
+    const {id, ...updateForm} = Object.fromEntries(formData);
+    if (typeof id !== "string" || !id) {
+        return { error: "Missing project ID" };
     }
 
-    const result = projectSchema.safeParse({
-        name: formData.get("name"),
-        description: formData.get("description") || undefined,
-        status: formData.get("status"),
-    });
-
+    const result = projectSchema.safeParse(updateForm);
     if (!result.success) {
-        const message = result.error.issues[0]?.message ?? "Invalid input";
-        redirect(`/projects/${projectId}/edit?error=${encodeURIComponent(message)}`);
+        return { fieldErrors: toFieldErrors(result.error) };
     }
-
+    
+    const supabase = await createClient();
     const { error } = await supabase.from("projects")
         .update({
             ...result.data,
             updated_at: new Date().toISOString(),
         })
-        .eq("id", projectId);
-    
+        .eq("id", id);
     if (error) {
-        redirect(`/projects/${projectId}/edit?error=${encodeURIComponent(error.message)}`);
+        return { error: error.message };
     }
 
     revalidatePath("/projects");
-    revalidatePath(`/projects/${projectId}`);
-    redirect(`/projects/${projectId}`);
+    revalidatePath(`/projects/${id}`);
+    redirect(`/projects/${id}`);
 }
 
-export async function deleteProject(formData: FormData) {
-    const supabase = await createClient();
-
+export async function deleteProject(_prevState: FormState, formData: FormData): Promise<FormState> {
     const projectId = formData.get("id");
     if (typeof projectId !== "string" || !projectId) {
-        redirect("/projects?error=Missing+project+ID");
+        return { error: "Missing project ID" };
     }
-
+    
+    const supabase = await createClient();
     const { error } = await supabase.from("projects").delete().eq("id", projectId);
     if (error) {
-        redirect(`/projects?error=${encodeURIComponent(error.message)}`);
+        return { error: error.message };
     }
 
     revalidatePath("/projects");
-    redirect(`/projects?message=${encodeURIComponent("Project deleted")}`);
+    redirect("/projects");
 }

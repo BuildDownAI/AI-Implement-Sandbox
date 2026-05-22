@@ -128,15 +128,15 @@ describe("Projects list page", () => {
     expect(screen.getByText(/page 2 of 3/i)).toBeInTheDocument();
   });
 
-  it("displays an error message from URL search params", async () => {
-    mockRange.mockResolvedValue({ data: [], count: 0, error: null });
-    await renderPage({ error: "Project not found" });
-    expect(screen.getByText(/project not found/i)).toBeInTheDocument();
-  });
-
-  it("displays a success message from URL search params", async () => {
-    mockRange.mockResolvedValue({ data: [], count: 0, error: null });
-    await renderPage({ message: "Project deleted" });
-    expect(screen.getByText(/project deleted/i)).toBeInTheDocument();
+  it("displays the Supabase query error when the list query fails", async () => {
+    mockRange.mockResolvedValue({
+      data: null,
+      count: null,
+      error: { message: "permission denied for table projects" },
+    });
+    await renderPage();
+    expect(
+      screen.getByText(/permission denied for table projects/i),
+    ).toBeInTheDocument();
   });
 });

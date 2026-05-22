@@ -1,36 +1,36 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import { Project } from "../../queries";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { updateProject } from "../../actions";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { emptyFormState } from "@/lib/form-state";
+import { SubmitButton } from "@/components/submit-button";
 
 type ProjectStatus = "draft" | "active" | "archived";
 
 export function EditProjectForm({ project }: { project: Project }) {
-    const searchParams = useSearchParams();
-    const error = searchParams.get("error");
+    const [state, formAction] = useActionState(updateProject, emptyFormState);
     const [projectStatus, setProjectStatus] = useState<ProjectStatus>(project.status);
 
     return (
         <>
-        {error && (
+        {state.error && (
             <p className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-                {error}
+                {state.error}
             </p>
         )}
 
-        <form action={updateProject} className="flex flex-col gap-6">
+        <form action={formAction} className="flex flex-col gap-6">
             <input type="hidden" name="id" value={project.id} />
 
             <FieldGroup>
-                <Field>
+                <Field data-invalid={!!state.fieldErrors?.name}>
                     <FieldLabel htmlFor="name"> Name </FieldLabel>
                     <Input
                         id="name"
@@ -40,9 +40,12 @@ export function EditProjectForm({ project }: { project: Project }) {
                         defaultValue={project.name}
                     />
                     <FieldDescription> 1 to 100 characters. </FieldDescription>
+                    {state.fieldErrors?.name && (
+                        <FieldError> {state.fieldErrors.name} </FieldError>
+                    )}
                 </Field>
 
-                <Field>
+                <Field data-invalid={!!state.fieldErrors?.description}>
                     <FieldLabel htmlFor="description"> Description </FieldLabel>
                     <Textarea
                         id="description"
@@ -52,9 +55,12 @@ export function EditProjectForm({ project }: { project: Project }) {
                         defaultValue={project.description ?? ""}
                     />
                     <FieldDescription> Optional. Up to 1000 characters. </FieldDescription>
+                    {state.fieldErrors?.description && (
+                        <FieldError> {state.fieldErrors.description} </FieldError>
+                    )}
                 </Field>
 
-                <Field>
+                <Field data-invalid={!!state.fieldErrors?.status}>
                     <FieldLabel htmlFor="status"> Status </FieldLabel>
                     <Select value={projectStatus} onValueChange={(v) => setProjectStatus(v as ProjectStatus)}>
                         <SelectTrigger id="status">
@@ -69,6 +75,9 @@ export function EditProjectForm({ project }: { project: Project }) {
                         </SelectContent>
                     </Select>
                     <input type="hidden" name="status" value={projectStatus} />
+                    {state.fieldErrors?.status && (
+                        <FieldError> {state.fieldErrors.status} </FieldError>
+                    )}
                 </Field>
             </FieldGroup>
 
@@ -76,7 +85,7 @@ export function EditProjectForm({ project }: { project: Project }) {
                 <Button type="button" variant="outline" asChild>
                     <Link href={`/projects/${project.id}`}> Cancel </Link>
                 </Button>
-                <Button type="submit"> Save changes </Button>
+                <SubmitButton pendingLabel="Saving..."> Save changes </SubmitButton>
             </div>
         </form>
         </>

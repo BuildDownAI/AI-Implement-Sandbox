@@ -3,13 +3,40 @@ import { render, screen } from "@testing-library/react";
 import { EditProjectForm } from "@/app/(app)/projects/[projectId]/edit/form";
 import type { Project } from "@/app/(app)/projects/queries";
 
-const searchParamsHolder = vi.hoisted(() => ({
-  params: new URLSearchParams(),
+type State = {
+  error?: string;
+  fieldErrors?: Record<string, string>;
+  message?: string;
+};
+
+const actionStateHolder = vi.hoisted(() => ({
+  state: {} as State,
+  pending: false,
 }));
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => searchParamsHolder.params,
+const formStatusHolder = vi.hoisted(() => ({
+  pending: false,
 }));
+
+vi.mock("react", async () => {
+  const actual = await vi.importActual<typeof import("react")>("react");
+  return {
+    ...actual,
+    useActionState: () => [
+      actionStateHolder.state,
+      vi.fn(),
+      actionStateHolder.pending,
+    ],
+  };
+});
+
+vi.mock("react-dom", async () => {
+  const actual = await vi.importActual<typeof import("react-dom")>("react-dom");
+  return {
+    ...actual,
+    useFormStatus: () => ({ pending: formStatusHolder.pending }),
+  };
+});
 
 vi.mock("@/app/(app)/projects/actions", () => ({
   updateProject: vi.fn(),
@@ -27,7 +54,9 @@ const baseProject: Project = {
 
 describe("EditProjectForm", () => {
   beforeEach(() => {
-    searchParamsHolder.params = new URLSearchParams();
+    actionStateHolder.state = {};
+    actionStateHolder.pending = false;
+    formStatusHolder.pending = false;
   });
 
   it("pre-fills the name and description from the project prop", () => {
@@ -76,13 +105,27 @@ describe("EditProjectForm", () => {
     expect(screen.getByLabelText(/description/i)).toHaveValue("");
   });
 
-  it("displays an error message from URL search params", () => {
-    searchParamsHolder.params = new URLSearchParams(
-      "error=Name+must+be+100+characters+or+less",
-    );
+  it("renders a FieldError under name when state.fieldErrors.name is set", () => {
+    actionStateHolder.state = {
+      fieldErrors: { name: "Name must be 100 characters or less" },
+    };
     render(<EditProjectForm project={baseProject} />);
-    expect(
-      screen.getByText(/name must be 100 characters or less/i),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /name must be 100 characters or less/i,
+    );
+  });
+
+  it("renders the form-level destructive banner when state.error is set", () => {
+    actionStateHolder.state = { error: "Missing project ID" };
+    render(<EditProjectForm project={baseProject} />);
+    expect(screen.getByText(/missing project id/i)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows the pending label and disables submit while pending", () => {
+    formStatusHolder.pending = true;
+    render(<EditProjectForm project={baseProject} />);
+    const button = screen.getByRole("button", { name: /saving/i });
+    expect(button).toBeDisabled();
   });
 });

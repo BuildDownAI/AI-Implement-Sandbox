@@ -1,25 +1,23 @@
 "use server";
 
+import { toFieldErrors, type FormState } from "@/lib/form-state";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { resetPasswordSchema } from "./schema";
+import { revalidatePath } from "next/cache";
 
-export async function updatePassword(formData: FormData) {
+export async function updatePassword(_prevState: FormState, formData: FormData): Promise<FormState> {
+    const result = resetPasswordSchema.safeParse(Object.fromEntries(formData));
+    if (!result.success) {
+        return { fieldErrors: toFieldErrors(result.error) };
+    }
+
     const supabase = await createClient();
-    const password = formData.get("password") as string;
-    const SITE_URL = process.env.SITE_URL;
-    if (!SITE_URL) {
-        throw new Error("SITE_URL env var is required");
-    }
-
-    const { error } = await supabase.auth.updateUser(
-        { password },
-        { emailRedirectTo: `${SITE_URL}/auth/confirm`}
-    );
-
-    // only redirects errors from Supabase itself
+    const { error } = await supabase.auth.updateUser({ password: result.data.password });
     if (error) {
-        redirect(`/reset-password?error=${encodeURIComponent(error.message)}`);
+        return { error: error.message };
     }
 
-    redirect(`/`);
+    revalidatePath("/", "layout");
+    redirect("/");
 }

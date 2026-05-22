@@ -1,6 +1,4 @@
-import { ThemeToggle } from "@/components/theme-toggle";
 import { createClient } from "@/lib/supabase/server";
-import { logout } from "@/app/(auth)/login/actions";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
@@ -10,7 +8,7 @@ export default async function Home() {
     const user = data?.claims;
 
     return (
-        <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center">
             <h1 className="text-4xl font-bold">Hello World</h1>
             <p className="max-w-prose text-center text-muted-foreground">
                 This page is served by a minimal Next.js + shadcn application used to
@@ -19,26 +17,12 @@ export default async function Home() {
                 logic lives here.
             </p>
             {user ? (
-                <>
                 <p className="text-muted-foreground"> Signed in as {user.email} </p>
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                    <Button asChild>
-                        <Link href="/projects"> View projects </Link>
-                    </Button>
-                    <Button asChild variant="outline">
-                        <Link href="/profile"> View profile </Link>
-                    </Button>
-                    <form action={logout}>
-                        <Button type="submit" variant="outline">Log out</Button>
-                    </form>
-                </div>
-                </>
             ) : (
-                <Button>
+                <Button asChild>
                     <Link href="/login">Log in</Link>
                 </Button>
             )}
-            <ThemeToggle />
-        </main>
+        </div>
     );
 }

@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { getProfile } from './queries';
 import { redirect } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Suspense } from 'react';
 import { ProfileInfoForm } from './profile-info-form';
 import { EmailForm } from './email-form';
 import { createClient } from '@/lib/supabase/server';
@@ -26,7 +25,7 @@ export default async function ProfilePage() {
     }
     
     return (
-        <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-8">
+        <>
             <h1 className="text-3xl font-bold"> Profile </h1>
 
             <Card>
@@ -35,9 +34,7 @@ export default async function ProfilePage() {
                     <CardDescription> Your display name and avatar. </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <Suspense>
-                        <ProfileInfoForm profile={profile}/>
-                    </Suspense>
+                    <ProfileInfoForm profile={profile}/>
                 </CardContent>
             </Card>
             
@@ -49,9 +46,7 @@ export default async function ProfilePage() {
                         <CardDescription> Change the email address for your account. </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <Suspense>
-                            <EmailForm currentEmail={email}/>
-                        </Suspense>
+                        <EmailForm currentEmail={email}/>
                     </CardContent>
                 </Card>
 
@@ -61,9 +56,7 @@ export default async function ProfilePage() {
                         <CardDescription> Update the password used to log in. </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <Suspense>
-                            <PasswordForm />
-                        </Suspense>
+                        <PasswordForm />
                     </CardContent>
                 </Card>
                 </>
@@ -90,6 +83,6 @@ export default async function ProfilePage() {
                     <DeleteAccountButton />
                 </CardContent>
             </Card>
-        </main>
+        </>
     )
 }

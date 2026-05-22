@@ -1,32 +1,31 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import { updateEmail } from "./actions";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { useActionState, useEffect } from "react";
+import { emptyFormState } from "@/lib/form-state";
+import { toast } from "sonner";
+import { SubmitButton } from "@/components/submit-button";
 
 export function EmailForm({ currentEmail }: { currentEmail: string }) {
-    const searchParams = useSearchParams();
-    const error = searchParams.get("error");
-    const message = searchParams.get("message");
+    const [state, formAction] = useActionState(updateEmail, emptyFormState);
+
+    useEffect(() => {
+        if (state.message) toast.success(state.message);
+    }, [state.message]);
 
     return (
         <>
-        {error && (
+        {state.error && (
             <p className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-                {error}
-            </p>
-        )}
-        {message && (
-            <p className="rounded border border-foreground/20 bg-muted p-3 text-sm">
-                {message}
+                {state.error}
             </p>
         )}
 
-        <form action={updateEmail} className="flex flex-col gap-6">
+        <form action={formAction} className="flex flex-col gap-6">
             <FieldGroup>
-                <Field>
+                <Field data-invalid={!!state.fieldErrors?.email}>
                     <FieldLabel htmlFor="email"> Email </FieldLabel>
                     <Input
                         id="email"
@@ -39,11 +38,14 @@ export function EmailForm({ currentEmail }: { currentEmail: string }) {
                     <FieldDescription>
                         For security, confirmation links will be sent to both your current and new email addresses. Both must be clicked to complete the change.
                     </FieldDescription>
+                    {state.fieldErrors?.email && (
+                        <FieldError> {state.fieldErrors.email} </FieldError>
+                    )}
                 </Field>
             </FieldGroup>
 
             <div className="flex justify-end">
-                <Button type="submit"> Update email </Button>
+                <SubmitButton pendingLabel="Sending..."> Update email </SubmitButton>
             </div>
         </form>
         </>

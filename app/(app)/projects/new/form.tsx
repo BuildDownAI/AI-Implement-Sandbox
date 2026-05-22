@@ -1,32 +1,32 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { createProject } from "../actions";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { emptyFormState } from "@/lib/form-state";
+import { SubmitButton } from "@/components/submit-button";
 
 type ProjectStatus = "draft" | "active" | "archived";
 
 export function CreateProjectForm() {
-    const searchParams = useSearchParams();
-    const error = searchParams.get("error");
+    const [state, formAction] = useActionState(createProject, emptyFormState);
     const [projectStatus, setProjectStatus] = useState<ProjectStatus>("draft");
 
     return (
         <>
-        {error && (
+        {state.error && (
             <p className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-                {error}
+                {state.error}
             </p>
         )}
-        <form action={createProject} className="flex flex-col gap-6">
+        <form action={formAction} className="flex flex-col gap-6">
             <FieldGroup>
-                <Field>
+                <Field data-invalid={!!state.fieldErrors?.name}>
                     <FieldLabel htmlFor="name"> Name </FieldLabel>
                     <Input
                         id="name"
@@ -36,9 +36,12 @@ export function CreateProjectForm() {
                         placeholder="My new project"
                     />
                     <FieldDescription> 1 to 100 characters. </FieldDescription>
+                    {state.fieldErrors?.name && (
+                        <FieldError> {state.fieldErrors.name} </FieldError>
+                    )}
                 </Field>
 
-                <Field>
+                <Field data-invalid={!!state.fieldErrors?.description}>
                     <FieldLabel htmlFor="description"> Description </FieldLabel>
                     <Textarea
                         id="description"
@@ -48,9 +51,12 @@ export function CreateProjectForm() {
                         rows={4}
                     />
                     <FieldDescription> Optional. Up to 1000 characters. </FieldDescription>
+                    {state.fieldErrors?.description && (
+                        <FieldError> {state.fieldErrors.description} </FieldError>
+                    )}
                 </Field>
 
-                <Field>
+                <Field data-invalid={!!state.fieldErrors?.status}>
                     <FieldLabel htmlFor="status"> Status </FieldLabel>
                     <Select value={projectStatus} onValueChange={(v) => setProjectStatus(v as ProjectStatus)}>
                         <SelectTrigger id="status">
@@ -65,6 +71,9 @@ export function CreateProjectForm() {
                         </SelectContent>
                     </Select>
                     <input type="hidden" name="status" value={projectStatus} />
+                    {state.fieldErrors?.status && (
+                        <FieldError> {state.fieldErrors.status} </FieldError>
+                    )}
                 </Field>
             </FieldGroup>
 
@@ -72,7 +81,7 @@ export function CreateProjectForm() {
                 <Button type="button" variant="outline" asChild>
                     <Link href="/projects"> Cancel </Link>
                 </Button>
-                <Button type="submit"> Create project </Button>
+                <SubmitButton pendingLabel="Creating..."> Create project </SubmitButton>
             </div>
         </form>
         </>

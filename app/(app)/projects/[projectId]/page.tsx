@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { getProject } from '../queries';
 import { DeleteProjectButton } from './delete-project-button';
 
@@ -22,13 +22,12 @@ export default async function ProjectDetailsPage({ params }: {
 }) {
     const { projectId } = await params;
     const project = await getProject(projectId);
-    
     if (!project) {
-        redirect(`/projects?error=${encodeURIComponent("Project not found")}`);
+        notFound();
     }
 
     return (
-        <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-8">
+        <>
             <div className="flex items-center justify-between gap-4">
                 <Link
                     href="/projects" 
@@ -67,6 +66,6 @@ export default async function ProjectDetailsPage({ params }: {
                     <DeleteProjectButton projectId={project.id} projectName={project.name} />
                 </CardFooter>
             </Card>
-        </main>
+        </>
     );
 }

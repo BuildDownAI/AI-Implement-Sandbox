@@ -25,7 +25,8 @@ A successfully merged pull request authored by the AI agent — in response to a
 - **Authentication**: email/password signup + login, GitHub OAuth, email verification, password reset, logout
 - **Projects** (per-user, RLS-isolated): list (paginated), detail, create, edit, delete-with-confirmation
 - **Profile + account settings**: display name, avatar upload (via Supabase Storage), change email (with double-confirmation security), change password, delete account (via a `SECURITY DEFINER` Postgres function — no service-role key exposed to app code). Profile page conditionally renders email/password sections for email users only; OAuth users see a "managed by provider" notice instead.
-- **Dark mode toggle**
+- **UX infrastructure**: top nav header with user dropdown, inline + per-field form errors via React 19's `useActionState`, success/error toasts via [sonner](https://sonner.emilkowal.ski), loading-state skeletons, error boundaries, and `not-found.tsx` fallbacks at the route group level
+- **Dark mode** with system-preference detection and persistence across refreshes (via [next-themes](https://github.com/pacocoursey/next-themes))
 - **Per-PR preview deploys** on Fly.io
 
 ## Running Locally
@@ -162,28 +163,41 @@ https://orchestrator-hello-world-test-pr-*.fly.dev/**
 | Path | Purpose |
 |------|---------|
 | `app/(app)/page.tsx` | Home page (`/`), public; renders conditionally based on auth state |
+| `app/(app)/layout.tsx` | Authenticated-shell layout with the top nav `<Header />` + `<main>` wrapper for all (app) routes |
+| `app/(app)/header.tsx` | Top navigation: brand link, Projects + Profile nav, theme toggle, user dropdown with email + Log out |
+| `app/(app)/error.tsx`, `app/(auth)/error.tsx` | Error boundaries for each route group (renders on render exceptions) |
 | `app/(app)/projects/` | Projects CRUD — list, detail, new, edit |
 | `app/(app)/projects/queries.ts` | Read helpers (e.g. `getProject(id)`); also re-exports the `Project` row type |
 | `app/(app)/projects/actions.ts` | Server Actions for create/update/delete |
 | `app/(app)/projects/schema.ts` | zod schema for project input + inferred type |
+| `app/(app)/projects/loading.tsx` (+ `[projectId]/loading.tsx`, `[projectId]/edit/loading.tsx`) | Skeleton fallbacks for data-fetching routes |
+| `app/(app)/projects/not-found.tsx` | "Project not found" boundary triggered by `notFound()` from detail/edit pages |
+| `app/(app)/projects/project-deleted-flash.tsx` | Client component that reads a `sessionStorage` flag set during delete and fires a toast |
 | `app/(app)/profile/` | Profile + account settings (display name, avatar, email, password, delete account) |
 | `app/(app)/profile/queries.ts` | `getProfile()` and the `Profile` type (DB row + computed `avatar_url`) |
 | `app/(app)/profile/actions.ts` | Server Actions: `updateProfile`, `updateEmail`, `updatePassword`, `deleteAccount` |
 | `app/(app)/profile/schema.ts` | zod schemas for profile, email, and password inputs |
+| `app/(app)/profile/loading.tsx` | Sectioned-card skeleton for the profile page |
 | `app/(auth)/login/` | Login + register form, GitHub OAuth, forgot-password link |
+| `app/(auth)/login/account-deleted-flash.tsx` | Toast after account deletion redirect (sessionStorage flash) |
+| `app/(auth)/login/auth-callback-error-toast.tsx` | Toast for errors propagated from `/auth/callback` and `/auth/confirm` |
 | `app/(auth)/forgot-password/` | Password reset request |
 | `app/(auth)/reset-password/` | New-password form (entered via recovery email link) |
 | `app/(auth)/layout.tsx` | Shared centered-card layout for auth pages |
 | `app/auth/confirm/route.ts` | Email/recovery OTP verifier |
 | `app/auth/callback/route.ts` | OAuth code-for-session exchanger |
-| `app/layout.tsx` + `app/globals.css` | Root HTML shell, Tailwind directives, shadcn theme variables |
-| `components/ui/` | shadcn primitives (Button, Input, Textarea, Select, Field, Card, Badge, AlertDialog, Empty, Separator, Label) |
+| `app/layout.tsx` + `app/globals.css` | Root HTML shell, Tailwind directives, shadcn theme vars, `<Toaster />`, `<ThemeProvider />` |
+| `app/not-found.tsx` | Global 404 page for unmatched routes |
+| `components/ui/` | shadcn primitives (Button, Input, Textarea, Select, Field, Card, Badge, AlertDialog, DropdownMenu, Avatar, Skeleton, Empty, Separator, Label, Sonner) |
 | `components/icons/github.tsx` | Inline GitHub SVG (lucide's `Github` is deprecated) |
-| `components/theme-toggle.tsx` | Dark mode toggle (Client Component example) |
+| `components/theme-toggle.tsx` | Dark mode toggle wired to next-themes (persists in localStorage) |
+| `components/submit-button.tsx` | Form submit button that reads `useFormStatus().pending` to disable + show a `pendingLabel` |
+| `lib/form-state.ts` | `FormState` shape (`{ error?, fieldErrors?, message? }`) returned by Server Actions + `toFieldErrors()` helper that maps zod's `flattenError` output into the shape |
+| `lib/schemas/auth-fields.ts` | Shared zod field-level primitives (`emailField`, `passwordField`) imported by auth + profile schemas |
 | `lib/supabase/{client,server,proxy}.ts` | Three Supabase client factories — one per execution context |
 | `lib/supabase/database.types.ts` | Generated TS types from the Supabase schema (`npm run db:types`) |
 | `supabase/migrations/` | Versioned SQL files defining tables, indexes, and RLS policies |
-| `middleware.ts` | Refreshes Supabase session on every request; gates protected routes |
+| `middleware.ts` | Refreshes Supabase session on every request; gates protected + auth-only routes |
 | `test/` | Vitest test suite |
 | `fly.toml`, `Dockerfile`, `docker-entrypoint.js` | Fly.io deployment config |
 | `PLANNING.md`, `WORKFLOW.md` | AI Implement prompt templates (rendered, not docs) |

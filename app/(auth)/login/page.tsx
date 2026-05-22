@@ -1,15 +1,22 @@
 import type { Metadata } from 'next';
-import { Suspense } from "react";
 import { LoginForm } from "./form";
+import { AccountDeletedFlash } from './account-deleted-flash';
+import { Suspense } from 'react';
+import { AuthCallbackErrorToast } from './auth-callback-error-toast';
 
 export const metadata: Metadata = {
-  title: "Login",
+    title: "Login",
 };
 
 export default function LoginPage() {
-  return (
-    <Suspense>
-      <LoginForm />
-    </Suspense>
-  );
+    return (
+        <>
+            <LoginForm />
+            
+            <Suspense>
+                <AuthCallbackErrorToast />
+            </Suspense>
+            <AccountDeletedFlash />
+        </>
+    );
 }

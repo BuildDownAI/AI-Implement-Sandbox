@@ -5,6 +5,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '
 import { createClient } from '@/lib/supabase/server';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { ProjectDeletedFlash } from './project-deleted-flash';
 
 export const metadata: Metadata = {
     title: "Projects",
@@ -18,11 +19,7 @@ const STATUS_BADGE_VARIANT = {
 } as const;
 
 export default async function ProjectsPage({ searchParams }: {
-    searchParams: Promise<{
-        page?: string,
-        error?: string,
-        message?: string,
-    }>;
+    searchParams: Promise<{ page?: string }>;
 }) {
     const params = await searchParams;
     const page = Math.max(1, Number(params.page) || 1);
@@ -40,7 +37,7 @@ export default async function ProjectsPage({ searchParams }: {
     const hasNext = page < totalPages;
 
     return (
-        <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-8">
+        <>
             <div className="flex items-center justify-between gap-4">
                 <h1 className="text-3xl font-bold">Projects</h1>
                 <Button asChild>
@@ -48,17 +45,13 @@ export default async function ProjectsPage({ searchParams }: {
                 </Button>
             </div>
 
-            {params.message && (
-                <p className="rounded border border-foreground/20 bg-muted p-3 text-sm">
-                    {params.message}
+            {error && (
+                <p className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                    {error.message}
                 </p>
             )}
 
-            {(params.error || error) && (
-                <p className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-                    {params.error ?? error?.message}
-                </p>
-            )}
+            <ProjectDeletedFlash />
 
             {projects && projects.length === 0 ? (
                 <Empty>
@@ -123,6 +116,6 @@ export default async function ProjectsPage({ searchParams }: {
                     )}
                 </nav>
             )}
-        </main>
+        </>
     );
 }

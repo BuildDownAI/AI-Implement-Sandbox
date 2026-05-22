@@ -27,20 +27,23 @@ When implementing changes here, prefer **minimal, conventional** edits. Adding h
 The App Router carries the entire app, organized into two route groups by access level:
 
 - **`app/(auth)/`** — public routes for unauthenticated users (`/login`, `/forgot-password`, `/reset-password`). Shares a centered card-style layout at [app/(auth)/layout.tsx](app/(auth)/layout.tsx).
-- **`app/(app)/`** — authenticated routes (`/`, `/projects/*`). Pages here read the current user via the server Supabase client and operate on RLS-protected data.
+- **`app/(app)/`** — the main app shell (`/`, `/projects/*`, `/profile`). The layout at [app/(app)/layout.tsx](app/(app)/layout.tsx) wraps every page with a top nav `<Header />` ([app/(app)/header.tsx](app/(app)/header.tsx)) + a `<main className="mx-auto max-w-3xl ...">` container, so individual pages emit raw content without their own `<main>` element. Note: the (app) group includes the home page `/`, which renders public content for signed-out visitors via the middleware allowlist.
 - **`app/auth/`** — *not* a route group (no parens); contains route handlers for the auth flow: [app/auth/confirm/route.ts](app/auth/confirm/route.ts) (email/recovery OTP) and [app/auth/callback/route.ts](app/auth/callback/route.ts) (OAuth code exchange).
 
 Route groups (parenthesized folder names) do **not** affect URLs — `(auth)/login/page.tsx` is served at `/login`, not `/(auth)/login`. They exist purely to organize pages that share a layout or convention.
 
+The **root layout** at [app/layout.tsx](app/layout.tsx) hosts globally-mounted singletons: the [next-themes](https://github.com/pacocoursey/next-themes) `<ThemeProvider attribute="class" defaultTheme="system" enableSystem>` (which manages the `dark` class on `<html>` with localStorage persistence + system preference detection) and a single `<Toaster />` from [sonner](https://sonner.emilkowal.ski) (one Toaster per app — mounting multiple causes navigation-time toast drops, since each Toaster instance subscribes to sonner's global state separately).
+
 ### Page convention: Server Component page + Client Component form
 
-Pages that need browser interactivity (`useState`, `useSearchParams`, event handlers) follow a two-file split:
+Pages that need browser interactivity (`useState`, event handlers, hooks) follow a three-file split:
 
-- **`page.tsx`** — Server Component. Exports `metadata` for the page title, wraps the form in a `<Suspense>` boundary (required for any page using `useSearchParams` so static prerendering doesn't bail out).
-- **`form.tsx`** — Client Component (`"use client"`). Holds the actual UI, state, and search-params reads.
-- **`actions.ts`** — Server Actions (`"use server"` at the top). Invoked from the form via the `action={...}` prop.
+- **`page.tsx`** — Server Component. Exports `metadata` for the page title.
+- **`form.tsx`** — Client Component (`"use client"`). Holds the actual UI, state (`useState`, `useActionState`), and event wiring.
+- **`actions.ts`** — Server Actions (`"use server"` at the top). Invoked from the form via the `action={...}` prop on a `<form>`.
+- **`schema.ts`** — zod schemas for input validation. Imports may include the shared field primitives from [lib/schemas/auth-fields.ts](lib/schemas/auth-fields.ts).
 
-This split is mandatory for any page using `useSearchParams` — see [Next docs on the Suspense bail-out](https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout).
+A `<Suspense>` boundary is only required when a client component uses `useSearchParams` (see [Next docs on the Suspense bail-out](https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout)). Most forms across the app no longer read search params (state flows through `useActionState`), so most pages don't need Suspense — exception is [app/(auth)/login/page.tsx](app/(auth)/login/page.tsx) which wraps `<AuthCallbackErrorToast />` in Suspense.
 
 ### Auth: three Supabase clients
 
@@ -50,7 +53,10 @@ Auth uses `@supabase/ssr`'s cookie-based session model. Three client factories u
 - [lib/supabase/server.ts](lib/supabase/server.ts) — `createServerClient` reading from `cookies()`. Use in Server Components, Server Actions, and Route Handlers.
 - [lib/supabase/proxy.ts](lib/supabase/proxy.ts) — `createServerClient` reading/writing the NextRequest/NextResponse cookies in middleware. Refreshes the session on every request and gates routes via `supabase.auth.getClaims()`.
 
-The middleware entry point is [middleware.ts](middleware.ts) at the repo root. Allowlist for unauthenticated access is in [lib/supabase/proxy.ts](lib/supabase/proxy.ts) — currently `/` (home page), `/login`, `/forgot-password`, and `/auth/*`. The home page renders different content for authenticated vs unauthenticated visitors.
+The middleware entry point is [middleware.ts](middleware.ts) at the repo root. Two prefix-arrays in [lib/supabase/proxy.ts](lib/supabase/proxy.ts) gate routing in both directions:
+
+- **`UNAUTH_ALLOWED_ROUTE_PREFIXES`** — `["/login", "/forgot-password", "/auth"]` (plus exact-match `/` for the public home). Anything else → redirect to `/login` if no session.
+- **`AUTH_RESTRICTED_ROUTE_PREFIXES`** — `["/login", "/forgot-password"]`. Authenticated users hitting these → redirect to `/`. `/reset-password` is intentionally **not** restricted because the recovery flow creates an authenticated session before landing the user there.
 
 **Always use `supabase.auth.getClaims()` on the server.** Never `getSession()` — its cookie storage is not cryptographically verified server-side. `getClaims()` verifies the JWT locally via cached JWKS and is documented as the preferred method.
 
@@ -91,16 +97,27 @@ The primary domain entity, intentionally minimal:
 
 #### Form composition pattern (all forms across the app)
 
-- **Native HTML `<form action={serverAction}>`** — no react-hook-form yet
-- **FieldGroup / Field / FieldLabel / FieldDescription** from [components/ui/field.tsx](components/ui/field.tsx) for layout; **never** raw `<div className="space-y-*">` for form structure
-- **`Input` / `Textarea`** are uncontrolled (`defaultValue` for edit, no `value` for create)
-- **`Select`** is forced controlled by Radix — pair with a `<input type="hidden" name="x">` mirror so the value reaches FormData
-- **Hidden `<input type="hidden" name="id">`** on edit / delete forms carries the row id to the action
-- **File inputs** (`<input type="file" name="..." accept="...">`) submit as `File` objects in FormData. The action reads via `formData.get(name) as File | null`, guards on `file.size > 0` (empty file inputs still submit a zero-byte File), validates MIME + size, then uploads via `supabase.storage.from(bucket).upload(...)`. Client-side `onChange` validation is for UX only — the action and the bucket's MIME allowlist are the security boundary.
-- **zod validates server-side** in the action; `required` + `maxLength` on inputs provide browser-level first-line defense
-- **Errors via URL search params** (`redirect("/path?error=...")` in the action; form reads via `useSearchParams()`); inline `useActionState` errors deferred to Block 4
-- **Destructive confirmations use AlertDialog** with a plain submit `Button` inside the form (not `AlertDialogAction` — see [delete-project-button.tsx](app/(app)/projects/[projectId]/delete-project-button.tsx) for why)
-- **Sectioned settings pages** (e.g. `/profile`): one Server Component page renders multiple independent `<form>` Card sections, each submitting to its own action. Conditional sections wrap multiple Cards in a `<>...</>` fragment — the fragment is DOM-invisible, so cards remain direct flex children of `<main>`. Note: every section reads `useSearchParams()`, so errors from one section currently surface in *every* section's banner (Block 4 will fix via `useActionState`).
+- **Native HTML `<form action={...}>`** wired to a Server Action via React 19's `useActionState`:
+  ```tsx
+  const [state, formAction, isPending] = useActionState(serverAction, emptyFormState);
+  // <form action={formAction}>...</form>
+  ```
+  Actions are typed as `(prevState: FormState, formData: FormData) => Promise<FormState>` and return the state shape defined in [lib/form-state.ts](lib/form-state.ts). The third tuple element (`isPending`) drives pending-state UI on submit buttons or destructive AlertDialog actions.
+- **`FormState` shape** — `{ error?: string; fieldErrors?: Record<string, string>; message?: string }`. `error` is a form-level destructive banner; `fieldErrors` are per-input messages (rendered under each Field via `<FieldError>`); `message` is a success that fires a toast via `useEffect(() => { if (state.message) toast.success(state.message) }, [state.message])`.
+- **`toFieldErrors(zodError)`** in [lib/form-state.ts](lib/form-state.ts) wraps zod 4's `z.flattenError(error)` to produce the `Record<string, string>` shape — one message per field (first of zod's array). Action validation pattern: `const parsed = schema.safeParse(input); if (!parsed.success) return { fieldErrors: toFieldErrors(parsed.error) };`
+- **Parsing FormData**: `safeParse(Object.fromEntries(formData))` for multi-field forms (use destructuring like `const { avatar, ...rest } = Object.fromEntries(formData)` to peel off file inputs); `safeParse({ field: formData.get("field") })` for single-field actions. Never `formData.get("x") as string` — the cast is a type lie that hides `null` and `File` cases.
+- **FieldGroup / Field / FieldLabel / FieldDescription / FieldError** from [components/ui/field.tsx](components/ui/field.tsx) for layout. Each `<Field data-invalid={!!state.fieldErrors?.x}>` opts into destructive styling when its named field has an error. `<FieldError>` renders with `role="alert"` — assertion-friendly for tests.
+- **`Input` / `Textarea`** are uncontrolled (`defaultValue` for edit, no `value` for create) **unless** the form needs to read their value client-side (e.g., confirm-password match in [reset-password/form.tsx](app/(auth)/reset-password/form.tsx) and [login/form.tsx](app/(auth)/login/form.tsx)). Controlled inputs use `value` + `onChange={(e) => setX(e.target.value)}`. Mix freely within one form.
+- **`Select`** is forced controlled by Radix — pair with a `<input type="hidden" name="x">` mirror so the value reaches FormData.
+- **Hidden `<input type="hidden" name="id">`** on edit / delete forms carries the row id to the action.
+- **File inputs** (`<input type="file" name="..." accept="...">`) submit as `File` objects in FormData. The action destructures them out of the FormData object (`Object.fromEntries(formData)` returns `File` for file inputs) and validates separately: guard on `file.size > 0` (empty file inputs still submit a zero-byte File), validate MIME + size into `fieldErrors.<inputName>`, then upload via `supabase.storage.from(bucket).upload(...)`. Client-side `onChange` validation is for UX only — the action and the bucket's MIME allowlist are the security boundary.
+- **zod validates server-side** in the action; `required` + `maxLength` on inputs provide browser-level first-line defense.
+- **`<SubmitButton>`** from [components/submit-button.tsx](components/submit-button.tsx) reads `useFormStatus().pending` (from `react-dom`) and disables itself + swaps to `pendingLabel` while the action is in flight. Drop-in replacement for `<Button type="submit">` in forms.
+- **Destructive confirmations use AlertDialog** — two valid patterns depending on where state lives:
+  - **Plain `<Button type="submit">` inside the form, no `AlertDialogAction`** ([delete-project-button.tsx](app/(app)/projects/[projectId]/delete-project-button.tsx) — historical pattern from Block 2). Works when the action redirects on success; the modal closing with the page change is fine. Lost if the action needs to return state (e.g., for an inline error).
+  - **`AlertDialogAction` + form-ref + `requestSubmit()`** ([delete-account-button.tsx](app/(app)/profile/delete-account-button.tsx)). The form lives at the AlertDialog root (outside `AlertDialogContent` so it survives the dialog close). Click handler does `e.preventDefault()` (keeps dialog open while the action flies), then `formRef.current?.requestSubmit()`. Pair with `useActionState`'s `isPending` for the disabled/pending label on `AlertDialogAction`. Use `buttonVariants({ variant: "destructive" })` for the destructive look.
+- **Sectioned settings pages** (e.g. `/profile`): one Server Component page renders multiple independent `<form>` Card sections, each with its own `useActionState` slot. Errors and toasts are per-section — no bleed-through, because each form holds its own state instance. Conditional sections wrap multiple Cards in a `<>...</>` fragment — the fragment is DOM-invisible, so cards remain direct flex children of `<main>` and inherit the layout's `gap-6` spacing.
+- **Cross-page feedback** (action redirects to a different page on success/failure) uses **sessionStorage flash** — the originating component writes a one-time key before the action submits (e.g., `sessionStorage.setItem("flash:project-deleted", projectName)`), and a small client component on the destination page reads it via `useEffect` on mount, fires a toast, and removes the key. See [project-deleted-flash.tsx](app/(app)/projects/project-deleted-flash.tsx) and [account-deleted-flash.tsx](app/(auth)/login/account-deleted-flash.tsx) for the pattern. Errors from server-side redirects ([auth/callback](app/auth/callback/route.ts), [auth/confirm](app/auth/confirm/route.ts)) propagate via `?error=` search params; [auth-callback-error-toast.tsx](app/(auth)/login/auth-callback-error-toast.tsx) on `/login` reads the param, toasts, and `router.replace`s the URL to clean it up. `useSearchParams` requires a `<Suspense>` wrapper in any page that uses it.
 
 ### Domain entity: `profiles`
 
@@ -111,6 +128,8 @@ The user account entity, in a 1:1 relationship with `auth.users`:
 - **RLS**: [supabase/migrations/00004_profiles_rls.sql](supabase/migrations/00004_profiles_rls.sql) — SELECT + UPDATE only (INSERT handled by trigger; DELETE handled by cascade). Both policies filter to `auth.uid() = user_id`.
 - **Storage**: an `avatars` bucket with public reads + per-user-folder writes. Path convention `<user_id>/<filename>`. Per-row Storage policies scope writes via `(storage.foldername(name))[1] = auth.uid()::text`. Bucket-level MIME allowlist (PNG/JPEG/WebP/GIF) + 5 MB cap. **Setup is dashboard-only — not in migrations.** See README for the policy templates.
 - **Self-delete**: [supabase/migrations/00006_delete_user_function.sql](supabase/migrations/00006_delete_user_function.sql) — a `SECURITY DEFINER` RPC `delete_current_user()` lets a user delete *themselves* from `auth.users` without exposing a service-role key. Cascading FKs clean up `profiles` and `projects` automatically. Called via `supabase.rpc("delete_current_user")` from the `deleteAccount` action; **note that adding/changing Postgres functions requires re-running `npm run db:types`** so the RPC name appears in the typed client.
+
+  **Pattern for any future self-acting `SECURITY DEFINER` function**: use `auth.uid()` directly inside the function rather than accepting a `user_id` parameter the caller could supply. Reasons: (1) `auth.uid()` is JWT-bound and unspoofable — app code can't make it return anything other than the calling user's UUID; (2) less code, smaller bug surface (a parameter version risks an inverted-conditional bug like `if (target = auth.uid())` that would allow the opposite of intended behavior); (3) self-documenting at call sites (`supabase.rpc("delete_current_user")` unambiguously means "delete me"). The parameter-with-internal-check pattern is correct *only* for admin functions acting on a *different* user — not for self-actions.
 - **Reads**: [app/(app)/profile/queries.ts](app/(app)/profile/queries.ts) — `getProfile()` returns `Profile | null` for the current user (RLS handles ownership; no `user_id` filter needed in app code). The `Profile` type extends the DB row with a computed `avatar_url` field built via `supabase.storage.from("avatars").getPublicUrl(...)`.
 - **Mutations**: [app/(app)/profile/actions.ts](app/(app)/profile/actions.ts) — `updateProfile` (display name + avatar), `updateEmail` (queues a two-step email-verification flow), `updatePassword` (immediate), `deleteAccount` (RPC + signOut). zod schemas in [app/(app)/profile/schema.ts](app/(app)/profile/schema.ts).
 
@@ -131,22 +150,57 @@ Validation runs in three places (defense in depth): client-side `onChange` (UX f
 
 ### Layout, theming, and core files
 
-- [app/layout.tsx](app/layout.tsx) — root HTML shell. Exports the global `metadata.title` template (`%s | Test Website`) that child pages' titles slot into.
-- [app/globals.css](app/globals.css) — Tailwind directives plus shadcn theme variables (HSL CSS custom properties; `.dark` block is the dark-mode palette).
+- [app/layout.tsx](app/layout.tsx) — root HTML shell. Exports the global `metadata.title` template (`%s | AI-Implement Sandbox`). Hosts the `<ThemeProvider>` (next-themes) and the single `<Toaster />` (sonner) — both are globally-mounted singletons.
+- [app/(app)/layout.tsx](app/(app)/layout.tsx) — the authenticated-shell layout: top `<Header />`, then `<main className="mx-auto max-w-3xl ...">{children}</main>`. Fetches `getProfile()` + `getClaims()` server-side to pass into the header.
+- [app/(app)/header.tsx](app/(app)/header.tsx) — Client Component nav bar: brand link, Projects/Profile inline nav with `aria-current="page"` on the active route (detected via `usePathname()`), theme toggle, user dropdown (avatar + email + Log out). The Log out item submits via `<form action={logout}>` invoked from a hidden form-ref + `requestSubmit()` on the menu item's `onSelect` (Radix DropdownMenu pattern).
+- [app/globals.css](app/globals.css) — Tailwind directives plus shadcn theme variables (HSL CSS custom properties; `.dark` block is the dark-mode palette). Dark-mode `--destructive` is tuned brighter than shadcn's default so error text stays readable on dark backgrounds.
 - [components/ui/](components/ui/) — shadcn components copied into the repo as source files. Edit in place; add new ones with `npx shadcn@latest add <component>`. Configuration lives in [components.json](components.json).
 - [components/icons/github.tsx](components/icons/github.tsx) — inline SVG used in place of `lucide-react`'s deprecated `Github` icon (lucide is removing brand icons; see lucide-icons/lucide#2792).
-- [components/theme-toggle.tsx](components/theme-toggle.tsx) — Client Component that toggles the `dark` class on `<html>` directly. Demonstrates the `"use client"` + `useState` pattern.
+- [components/theme-toggle.tsx](components/theme-toggle.tsx) — Client Component using `useTheme()` from next-themes. Shows a Sun icon when dark mode is active (suggesting "switch to light") and a Moon icon when light mode is active. Uses a `mounted` gate on first render to avoid SSR hydration mismatch — the server doesn't know which theme the client will resolve to.
+- [components/submit-button.tsx](components/submit-button.tsx) — `<SubmitButton>` reads `useFormStatus()` to disable the underlying `<Button>` + swap to `pendingLabel` while the enclosing form's action is in flight. **`useFormStatus` is from `react-dom`, not `react`** — easy mistake; `useActionState` is in `react`.
+- [lib/form-state.ts](lib/form-state.ts) — `FormState` type (`{ error?, fieldErrors?, message? }`) + `emptyFormState` + `toFieldErrors(zodError)` helper that consumes `z.flattenError`'s output. Single transport contract between Server Actions and the forms that bind them.
+- [lib/schemas/auth-fields.ts](lib/schemas/auth-fields.ts) — shared zod field-level primitives: `emailField`, `passwordField`. Auth + profile schemas compose these so the validation rules (email format, password min-length, error messages) live in one place.
 - [lib/utils.ts](lib/utils.ts) — the `cn()` helper (`clsx` + `tailwind-merge`) used by every shadcn component to merge Tailwind classes safely.
+
+### UX infrastructure
+
+- **Toasts** — sonner. Single `<Toaster position="top-center" />` in [app/layout.tsx](app/layout.tsx). Any client component imports `toast` from `sonner` and calls `toast.success(msg)` / `toast.error(msg)`. Communicates via a module-level event bus — works across route group boundaries.
+- **Loading states** — Next's `loading.tsx` file convention. Drop a `loading.tsx` next to a `page.tsx` and Next automatically wraps the segment in `<Suspense fallback={<LoadingComponent />}>`. Present at: [app/(app)/projects/loading.tsx](app/(app)/projects/loading.tsx), [app/(app)/projects/[projectId]/loading.tsx](app/(app)/projects/[projectId]/loading.tsx), [app/(app)/projects/[projectId]/edit/loading.tsx](app/(app)/projects/[projectId]/edit/loading.tsx), [app/(app)/profile/loading.tsx](app/(app)/profile/loading.tsx). Pattern: keep the static shell (real headings, real navigation links), `<Skeleton>`-replace the data-driven parts; vary widths within text blocks (`w-3/4`, `w-1/2`, `w-2/3`) for natural-looking placeholders.
+- **Error boundaries** — Next's `error.tsx` file convention. Must be `"use client"`. Receives `{ error: Error & { digest?: string }; reset: () => void }`. Present at: [app/(app)/error.tsx](app/(app)/error.tsx), [app/(auth)/error.tsx](app/(auth)/error.tsx). Catches render exceptions in the segment's page/children — does NOT catch errors in the layout itself, in `notFound()` calls (which go to `not-found.tsx`), or above the route group.
+- **`notFound()` boundaries** — Next's `not-found.tsx` convention. Renders when a Server Component throws `notFound()` from `next/navigation`. Two boundaries in the tree:
+  - [app/(app)/projects/not-found.tsx](app/(app)/projects/not-found.tsx) — scoped to the projects subtree, catches `notFound()` from detail/edit pages with a "Project not found" message + back link.
+  - [app/not-found.tsx](app/not-found.tsx) — global fallback for unmatched URLs.
+- **Dark mode** — next-themes manages a `dark` class on `<html>` based on system preference + user toggle, persisted in localStorage. `suppressHydrationWarning` on `<html>` is required (next-themes sets the class client-side before React hydrates, which would otherwise warn about a server/client class mismatch).
 
 ### Tests
 
 Vitest + React Testing Library, configured in [vitest.config.ts](vitest.config.ts) (jsdom environment, `@/*` path alias). Setup file [test/setup.ts](test/setup.ts) registers `@testing-library/jest-dom` matchers.
 
-- **Client form tests** (e.g. [test/login-form.test.tsx](test/login-form.test.tsx), [test/projects-create-form.test.tsx](test/projects-create-form.test.tsx), [test/profile-info-form.test.tsx](test/profile-info-form.test.tsx)) mock `next/navigation` via `vi.hoisted` so per-test search params can be set, and stub the Server Actions module so submission is a no-op.
+- **Client form tests** (e.g. [test/login-form.test.tsx](test/login-form.test.tsx), [test/projects-create-form.test.tsx](test/projects-create-form.test.tsx), [test/profile-info-form.test.tsx](test/profile-info-form.test.tsx)) mock React 19's `useActionState` (from `react`) and `useFormStatus` (from `react-dom`) via `vi.hoisted` holders so per-test state and pending values can be set, mock `sonner` to spy on `toast.success`/`toast.error`, and stub the Server Actions module so submission is a no-op. Canonical setup shape:
+  ```ts
+  const actionStateHolder = vi.hoisted(() => ({ state: {} as FormState, pending: false }));
+  const formStatusHolder = vi.hoisted(() => ({ pending: false }));
+  const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+  vi.mock("react", async () => ({
+    ...await vi.importActual<typeof import("react")>("react"),
+    useActionState: () => [actionStateHolder.state, vi.fn(), actionStateHolder.pending],
+  }));
+  vi.mock("react-dom", async () => ({
+    ...await vi.importActual<typeof import("react-dom")>("react-dom"),
+    useFormStatus: () => ({ pending: formStatusHolder.pending }),
+  }));
+  vi.mock("sonner", () => ({ toast: toastMock }));
+  ```
+  Reset holders + clear mocks in `beforeEach`. For components with multiple `useActionState` slots (the login form has three — login/register/github), differentiate the mock by action reference: `useActionState: (action) => action === actionMocks.login ? [loginState, ...] : ...`.
 - **Server Component tests** (e.g. [test/page.test.tsx](test/page.test.tsx), [test/projects-list.test.tsx](test/projects-list.test.tsx), [test/profile-page.test.tsx](test/profile-page.test.tsx)) mock the Supabase server client chain. Async Server Components are invoked directly: `render(await Page({ searchParams: Promise.resolve({...}) }))`. For pages that compose mocked query helpers (e.g. `getProfile`) directly, mock the helper module rather than building out the full Supabase chain.
 - The Supabase chain mock typically only needs to mock the *terminal* method (`.range`, `.maybeSingle`, `.single`). Intermediate `.from().select().order()` calls just return `this`-shaped objects pointing at the terminal mock.
 - shadcn's `Empty` component renders its title as a styled `<div>`, not an `<h*>`. Assert via `getByText`, not `getByRole("heading")`. Same is true of `CardTitle`, `AlertDialogTitle`, and `DialogTitle` — they're not semantic `<h*>` elements.
-- **Dialog tests** (Radix-based components like `AlertDialog`): use the dialog's accessible name via `getByRole("alertdialog", { name: /.../ })` to verify it opened with the right title (Radix wires `AlertDialogTitle` to the dialog's `aria-labelledby`). For buttons inside vs outside the dialog with shared text, scope queries with `within(dialog).getByRole(...)` — RTL's `within` narrows lookups to a subtree.
+- **`FieldError` renders with `role="alert"`** — query per-field errors via `screen.getByRole("alert")`. Multi-field error states produce multiple alerts; use `getAllByRole("alert")` + index, or scope with `within(field)`. Form-level destructive banners are plain `<p>` elements (no `role="alert"`), so `queryByRole("alert")` is `null` in that state — useful for asserting "field error vs form-level error."
+- **Dialog tests** (Radix-based components like `AlertDialog`): use the dialog's accessible name via `getByRole("alertdialog", { name: /.../ })` to verify it opened with the right title. **Avoid straight-quote regexes when the title contains curly quotes** (`&ldquo;`/`&rdquo;`) — the DOM contains U+201C/U+201D, not `"`. Use a loose regex like `/delete.*my project/i`. For buttons inside vs outside the dialog with shared text, scope queries with `within(dialog).getByRole(...)`.
+- **Radix `DropdownMenu` doesn't open via `fireEvent.click` in jsdom** because its mouse branch checks `event.pointerType === "mouse"`, which jsdom doesn't populate. Use **keyboard activation** instead: `trigger.focus(); fireEvent.keyDown(trigger, { key: "Enter" })`. Then query menu items via `screen.getByRole("menuitem", ...)` — Radix portals the menu into `document.body`, so `within(container)` won't find them.
+- **`sessionStorage` is provided natively by jsdom** — no mocking needed, just `sessionStorage.clear()` in `beforeEach` to prevent leak across tests. The same pattern as `localStorage`.
+- **File API mocking**: construct real `File` objects via `new File([content], "name", { type })` and fire via `fireEvent.change(input, { target: { files: [file] } })`. The string body `"x".repeat(N)` controls `.size` for testing size-validation client-side.
+- **Spying on `requestSubmit`** for ref+requestSubmit patterns (e.g. delete-account-button, delete-project-button): `vi.spyOn(HTMLFormElement.prototype, "requestSubmit").mockImplementation(() => {})` intercepts the form submission so the test can assert it was called without actually running the action.
 - **Anchored regex for `getByLabelText`**: substring matches like `/new password/i` match *every* label containing those words ("New password" *and* "Confirm new password"). RTL throws on multiple matches. Anchor with `^...$` (e.g. `/^new password$/i`) or use `{ exact: true }`.
 
 Pattern for new pages: tests live in [test/](test/) (flat — not nested next to the source). Don't bother trying to unit-test middleware, Route Handlers, or Server Actions directly without an integration-test setup; cover them via the manual verification steps in each block's plan.
@@ -170,9 +224,12 @@ When adding a route: create `app/<group>/<route>/page.tsx`. For an HTTP API endp
 - **Path alias `@/*`** maps to the repo root (configured in both [tsconfig.json](tsconfig.json) and [vitest.config.ts](vitest.config.ts)). Prefer `@/components/ui/button` over relative paths.
 - **Styling is Tailwind-only** — no CSS modules, no `style={...}` unless dynamic. Compose utility classes; reach for `cn()` when conditionally combining them.
 - **Server Components by default; `"use client"` only at the leaves** that need interactivity. Pages stay Server Components so they can export `metadata`.
-- **Mutations go through Server Actions**, not API routes. Forms wire `action={someServerAction}`; reading the form uses `formData.get("fieldName")`.
-- **`useSearchParams` requires a `<Suspense>` boundary** in any page that uses it, or `next build` will fail.
-- **No new dependencies without a clear reason** — the scaffold is deliberately small.
+- **Mutations go through Server Actions** bound via `useActionState`. Actions return `FormState` from [lib/form-state.ts](lib/form-state.ts); the form binds with `const [state, formAction, isPending] = useActionState(action, emptyFormState)` and renders `state.error` / `state.fieldErrors[*]` / fires `toast.success(state.message)` as appropriate.
+- **`redirect()` from a Server Action still works inside `useActionState`** — it throws a `NEXT_REDIRECT` exception that propagates past the action's return value. Server Actions also implicitly refresh the current route after they complete; if a destination page expects state from the action (e.g., to render a toast), the originating component is likely unmounted before its `useEffect` can fire. Use the **sessionStorage flash pattern** for cross-page feedback instead of `router.push()` from `useEffect`.
+- **`useSearchParams` requires a `<Suspense>` boundary** in any page that uses it, or `next build` will fail. Most forms no longer use it (state flows through `useActionState`).
+- **For "resource not found" on a dynamic route** (e.g. project doesn't exist), call `notFound()` from `next/navigation` rather than `redirect("/list?error=...")`. Renders the nearest `not-found.tsx` boundary; preserves the URL for refresh/back; doesn't pollute the destination page with error state.
+- **PostgREST refuses UPDATE/DELETE without a filter, even when RLS would scope to a single row.** Calls like `.from("profiles").update(updates)` (no filter) error at runtime with `UPDATE requires a WHERE clause`. Always end UPDATE/DELETE chains with `.eq("user_id", userId)` (or another filter); this is for PostgREST's safety net, not for RLS — RLS still does the per-user scoping at the row level. **SELECT has no such requirement** — `.from("table").select()` works without filters because RLS handles it.
+- **No new dependencies without a clear reason** — the scaffold is deliberately small. Block 4 added `sonner`, `next-themes`, and `@radix-ui/react-dropdown-menu` (the last via shadcn install) — each earning its keep.
 
 ## Required environment variables
 

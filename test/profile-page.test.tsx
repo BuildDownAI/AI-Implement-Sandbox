@@ -23,7 +23,6 @@ vi.mock("@/app/(app)/profile/actions", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
   redirect: vi.fn(),
 }));
 

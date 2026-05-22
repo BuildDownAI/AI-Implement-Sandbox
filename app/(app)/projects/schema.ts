@@ -7,7 +7,8 @@ export const projectSchema = z.object({
 
     description: z.string().trim()
         .max(1000, "Description must be 1000 characters or less")
-        .optional(),
+        .optional()
+        .transform((val) => (val === "" ? undefined : val)), // transforms empty strings into undefined to keep descriptions null within the database
     
     status: z.enum(["draft", "active", "archived"], {
         message: "Status must be draft, active, or archived",
