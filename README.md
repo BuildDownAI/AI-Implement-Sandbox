@@ -1,4 +1,20 @@
-# orchestrator-hello-world-test
+# AI-Implement-Sandbox
+
+> **⚠️ Hardcoded Legacy Name — Locations to Generalize**
+>
+> The old repo name `orchestrator-hello-world-test` is still hardcoded in the following non-README files. Each will need to be updated when the Fly.io infrastructure is renamed (tracked in AII-161). **Do not edit these files in this PR — they are flagged here for follow-up only.**
+>
+> | File | Line | Value | Notes |
+> |------|------|-------|-------|
+> | `fly.toml` | 1 | `# fly.toml app configuration file generated for orchestrator-hello-world-test` | Comment — update when Fly app is renamed |
+> | `fly.toml` | 6 | `app = 'orchestrator-hello-world-test'` | Live Fly app name — renaming requires `flyctl apps create` + traffic cutover |
+> | `.github/workflows/fly-preview.yml` | 26 | `APP_NAME: orchestrator-hello-world-test-pr-${{ github.event.pull_request.number }}` | Preview app naming — must align with production Fly rename to avoid orphaning in-flight previews |
+> | `supabase/config.toml` | 5 | `project_id = "orchestrator-hello-world-test"` | Supabase CLI project identifier — update via `supabase unlink && supabase link` after rename |
+> | `package.json` | 2 | `"name": "orchestrator-hello-world-test"` | Inert for a `"private": true` package; safe to rename independently |
+> | `package-lock.json` | 2, 8 | `"name": "orchestrator-hello-world-test"` | Auto-generated from `package.json`; regenerates on next `npm install` after `package.json` is updated |
+> | `CLAUDE.md` | 218 | `orchestrator-hello-world-test-pr-<N>` in Deployment section | AI planning context — update alongside `fly-preview.yml` so future agent runs get accurate guidance |
+>
+> **TODO: remove this section once all occurrences above are generalized.**
 
 This repository was created solely to test the functionality of AI-Implement. It is not a production project and contains no real application logic.
 
@@ -160,7 +176,7 @@ npx vitest run -t 'renders login mode by default'
 Production and preview deploys are automated via GitHub Actions:
 
 - **Production** ([fly-deploy.yml](.github/workflows/fly-deploy.yml)) — deploys on push to `main` (or via manual `workflow_dispatch`). Requires repo secret `FLY_API_TOKEN` scoped to the production app.
-- **Per-PR previews** ([fly-preview.yml](.github/workflows/fly-preview.yml)) — creates `orchestrator-hello-world-test-pr-<N>` on PR open, deploys on each push, destroys on PR close. Requires repo secret `FLY_API_TOKEN_PREVIEW` (org-scoped) and repo variable `FLY_ORG`.
+- **Per-PR previews** ([fly-preview.yml](.github/workflows/fly-preview.yml)) — creates `ai-implement-sandbox-pr-<N>` on PR open, deploys on each push, destroys on PR close. Requires repo secret `FLY_API_TOKEN_PREVIEW` (org-scoped) and repo variable `FLY_ORG`.
 
 Build-time env vars (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`) are stored as **GitHub repo variables** (Settings → Secrets and variables → Actions → Variables tab) and passed to `flyctl deploy` as `--build-arg` by both workflow files. This is required because `NEXT_PUBLIC_*` values are inlined into the compiled bundle at build time, not read at runtime.
 
@@ -168,8 +184,8 @@ Build-time env vars (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHAB
 
 Add production and preview URLs to your Supabase **Redirect URLs** allowlist to make auth flows work on deployed environments:
 ```
-https://orchestrator-hello-world-test.fly.dev/**
-https://orchestrator-hello-world-test-pr-*.fly.dev/**
+https://ai-implement-sandbox.fly.dev/**
+https://ai-implement-sandbox-pr-*.fly.dev/**
 ```
 
 ## Repository structure
