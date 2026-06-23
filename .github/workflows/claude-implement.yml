@@ -18,7 +18,7 @@
 #   AI_IMPLEMENT_RUNNER_IMAGE                    - Default runner image for this repo/org.
 #   AI_IMPLEMENT_ALLOWED_RUNNER_IMAGE_PREFIXES   - Extra image prefixes allowed in addition to ghcr.io/builddownai/ and the repo owner's own ghcr.io/<owner>/ namespace (auto-trusted).
 #   AI_IMPLEMENT_RUNNER_LABEL                    - runs-on label for the implement job (default ubuntu-latest); set to a larger-runner label to speed up CPU-bound test suites.
-
+#  a new line was added that will be overwritten upon syncing again
 name: Claude AI Implementation
 
 on:
@@ -66,7 +66,7 @@ on:
         type: string
         default: ""
       max_turns:
-        description: "Cap on Claude turns per implement pass (empty = runner default)"
+        description: "Cap on Claude turnss per implement pass (empty = runner default)"
         required: false
         type: string
         default: ""
