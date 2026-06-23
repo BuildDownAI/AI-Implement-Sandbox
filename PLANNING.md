@@ -25,7 +25,8 @@ model: claude-sonnet-4-6
     ${ISSUE_IDENTIFIER}   Linear identifier, e.g. ENG-42
     ${ISSUE_TITLE}        Issue title
     ${ISSUE_DESCRIPTION}  Full issue description (Markdown)
-    ${ISSUE_ID}           Linear UUID (used in curl commands to post comments)
+    ${ISSUE_ID}           Linear UUID (provided for reference; do not curl-post comments directly —
+                          write files to ai-output/comments/ and the orchestrator posts them)
     ${PARENT}             Parent issue as "- IDENTIFIER: Title" (or "None")
     ${SIBLINGS}           Sibling stories (other children of the parent), newline-separated
     ${DEPENDENCIES}       Related issues as "- [type] IDENTIFIER: Title", newline-separated
