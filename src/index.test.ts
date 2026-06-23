@@ -76,6 +76,7 @@ describe("monitorFlyMachineJob — timeout, under-budget (attempts ≤ 3)", () =
     expect(ops.notifyStuckGiveUp).not.toHaveBeenCalled();
     expect(ops.clearWorkingState).not.toHaveBeenCalled();
     expect(ops.postTimeoutStatusComment).toHaveBeenCalledWith(job, "machine_timeout");
+    expect(ops.postSessionLogsComment).toHaveBeenCalledWith(job);
     expect(ops.postStuckGiveUpComment).not.toHaveBeenCalled();
   });
 });
@@ -141,6 +142,7 @@ describe("monitorLocalDockerJob — timeout, under-budget (attempts ≤ 3)", () 
     expect(ops.notifyStuckGiveUp).not.toHaveBeenCalled();
     expect(ops.clearWorkingState).not.toHaveBeenCalled();
     expect(ops.postTimeoutStatusComment).toHaveBeenCalledWith(job, "container_timeout");
+    expect(ops.postSessionLogsComment).toHaveBeenCalledWith(job);
     expect(ops.postStuckGiveUpComment).not.toHaveBeenCalled();
   });
 });
@@ -193,6 +195,7 @@ describe("handleBoundedRemediation — stopRunner error handling", () => {
     expect(consoleSpy).toHaveBeenCalled();
     expect(ops.incrementStuckAttempts).toHaveBeenCalledWith("issue-1");
     expect(ops.resetTicket).toHaveBeenCalledWith(job);
+    expect(ops.postSessionLogsComment).toHaveBeenCalledWith(job);
     expect(ops.notifyStuckGiveUp).not.toHaveBeenCalled();
 
     consoleSpy.mockRestore();
