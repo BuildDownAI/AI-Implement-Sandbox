@@ -231,6 +231,7 @@ When adding a route: create `app/<group>/<route>/page.tsx`. For an HTTP API endp
 - **For "resource not found" on a dynamic route** (e.g. project doesn't exist), call `notFound()` from `next/navigation` rather than `redirect("/list?error=...")`. Renders the nearest `not-found.tsx` boundary; preserves the URL for refresh/back; doesn't pollute the destination page with error state.
 - **PostgREST refuses UPDATE/DELETE without a filter, even when RLS would scope to a single row.** Calls like `.from("profiles").update(updates)` (no filter) error at runtime with `UPDATE requires a WHERE clause`. Always end UPDATE/DELETE chains with `.eq("user_id", userId)` (or another filter); this is for PostgREST's safety net, not for RLS — RLS still does the per-user scoping at the row level. **SELECT has no such requirement** — `.from("table").select()` works without filters because RLS handles it.
 - **No new dependencies without a clear reason** — the scaffold is deliberately small. Block 4 added `sonner`, `next-themes`, and `@radix-ui/react-dropdown-menu` (the last via shadcn install) — each earning its keep.
+- **`docs/solutions/`** — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
 
 ## Required environment variables
 
