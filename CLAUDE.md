@@ -253,3 +253,7 @@ Production + per-PR previews source `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SU
 [PLANNING.md](PLANNING.md) and [WORKFLOW.md](WORKFLOW.md) are **prompt templates** seeded by the ai-implement sync workflow. They are rendered (front matter stripped, `${VARS}` substituted) and sent to a separate Claude instance during planning/implementation runs. They are *not* documentation of this repo's architecture, though their "Repo context" sections are kept in sync with the real stack so that AI runs get accurate guidance.
 
 The workflows in [.github/workflows/](.github/workflows/) named `claude-plan.yml`, `claude-implement.yml`, and `comment-trigger.yml` are managed by the ai-implement sync workflow — do not edit them directly; changes will be overwritten on the next sync. The `fly-deploy.yml` and `fly-preview.yml` workflows in the same directory are *not* sync-managed and are safe to edit.
+
+## Documented Solutions
+
+`docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
