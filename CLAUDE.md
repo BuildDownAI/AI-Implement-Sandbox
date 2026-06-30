@@ -22,6 +22,10 @@ When implementing changes here, prefer **minimal, conventional** edits. Adding h
 - `npm run db:types` — regenerate [lib/supabase/database.types.ts](lib/supabase/database.types.ts) from the linked Supabase schema. **Run after every migration — including ones that only add/modify Postgres functions or triggers, not just tables.** New RPC functions only appear in the typed client after re-generation.
 - Add a new shadcn component: `npx shadcn@latest add <name>` (e.g. `button`, `card`, `dialog`) — files land in [components/ui/](components/ui/)
 
+## Documented Solutions
+
+`docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in a documented area.
+
 ## Architecture
 
 The App Router carries the entire app, organized into two route groups by access level:
