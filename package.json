@@ -9,6 +9,7 @@
     "start": "next start -H 0.0.0.0",
     "lint": "next lint",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "db:types": "npx supabase gen types typescript --linked > lib/supabase/database.types.ts"
   },
   "dependencies": {
