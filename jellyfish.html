@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jellyfish</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #010c1e; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const TAU = Math.PI * 2;
+const rnd = (a, b) => Math.random() * (b - a) + a;
+const HUES = [175, 192, 215, 240, 262, 283, 308, 330];
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Plankton particles
+const particles = [];
+function initParticles() {
+  particles.length = 0;
+  for (let i = 0; i < 110; i++) {
+    particles.push({
+      x: rnd(0, canvas.width),
+      y: rnd(0, canvas.height),
+      r: rnd(0.4, 1.8),
+      vy: rnd(0.07, 0.32),
+      alpha: rnd(0.08, 0.42),
+    });
+  }
+}
+initParticles();
+window.addEventListener('resize', initParticles);
+
+class Jellyfish {
+  constructor() {
+    this.x = rnd(0, canvas.width);
+    this.y = rnd(0, canvas.height);
+    this.radius = rnd(28, 82);
+
+    const spd = rnd(0.18, 0.62);
+    const ang = rnd(0, TAU);
+    this.vx = Math.cos(ang) * spd;
+    this.vy = Math.sin(ang) * spd;
+
+    this.hue = HUES[Math.floor(Math.random() * HUES.length)] + rnd(-12, 12);
+    this.sat = rnd(58, 88);
+    this.lum = rnd(52, 70);
+
+    this.pulsePhase = rnd(0, TAU);
+    this.pulseSpeed = rnd(0.01, 0.028);
+    this.pulseAmt = rnd(0.07, 0.17);
+
+    this.wavePhase = rnd(0, TAU);
+    this.waveSpeed = rnd(0.016, 0.036);
+
+    this.tentacleCount = Math.round(rnd(14, 24));
+    this.tentacleLen = this.radius * rnd(2.4, 5.2);
+    this.tentacleAmp = rnd(7, 22);
+
+    this.armCount = Math.round(rnd(4, 7));
+    this.armLen = this.radius * rnd(3.0, 6.5);
+
+    this.age = 0;
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.pulsePhase += this.pulseSpeed;
+    this.wavePhase += this.waveSpeed;
+    this.age++;
+
+    this.vx += (Math.random() - 0.5) * 0.003;
+    this.vy += (Math.random() - 0.5) * 0.003;
+
+    const spd = Math.hypot(this.vx, this.vy);
+    if (spd > 0.72) { this.vx *= 0.72 / spd; this.vy *= 0.72 / spd; }
+
+    const pad = this.radius * 7;
+    if (this.x < -pad) this.x = canvas.width + pad;
+    if (this.x > canvas.width + pad) this.x = -pad;
+    if (this.y < -pad) this.y = canvas.height + pad;
+    if (this.y > canvas.height + pad) this.y = -pad;
+  }
+
+  draw() {
+    const pulse = 1 + Math.sin(this.pulsePhase) * this.pulseAmt;
+    const R = this.radius * pulse;
+    const H = this.hue, S = this.sat, L = this.lum;
+    const alpha = Math.min(0.88, this.age / 80);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(this.x, this.y);
+
+    // Outer glow halo
+    {
+      const g = ctx.createRadialGradient(0, -R * 0.15, R * 0.1, 0, 0, R * 1.65);
+      g.addColorStop(0, `hsla(${H},${S}%,${L + 20}%,0.16)`);
+      g.addColorStop(0.55, `hsla(${H},${S}%,${L}%,0.06)`);
+      g.addColorStop(1, `hsla(${H},${S}%,${L}%,0)`);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, R * 1.65, R * 1.65, 0, 0, TAU);
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+
+    // Tentacles (behind bell)
+    ctx.save();
+    ctx.lineWidth = Math.max(0.4, R * 0.013);
+    ctx.lineCap = 'round';
+    for (let i = 0; i < this.tentacleCount; i++) {
+      const theta = (i / this.tentacleCount) * TAU;
+      const ox = Math.cos(theta) * R * 0.9;
+      const oy = Math.sin(theta) * R * 0.2;
+
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      for (let k = 1; k <= 18; k++) {
+        const t = k / 18;
+        const wave = Math.sin(this.wavePhase + t * 5.5 + i * 0.58) * this.tentacleAmp * t;
+        ctx.lineTo(ox + wave, oy + this.tentacleLen * t);
+      }
+      const behind = oy < 0;
+      ctx.strokeStyle = `hsla(${H},${S}%,${L + 10}%,${behind ? 0.22 : 0.52})`;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Oral arms (central, ruffled)
+    ctx.save();
+    ctx.lineWidth = Math.max(0.9, R * 0.027);
+    ctx.lineCap = 'round';
+    for (let i = 0; i < this.armCount; i++) {
+      const theta = (i / this.armCount) * TAU;
+      const ox = Math.cos(theta) * R * 0.2;
+      const oy = R * 0.12;
+
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      for (let k = 1; k <= 22; k++) {
+        const t = k / 22;
+        const wave = Math.sin(this.wavePhase * 1.35 + t * 7 + i * 1.9) * this.tentacleAmp * 1.75 * t;
+        ctx.lineTo(ox + wave, oy + this.armLen * t);
+      }
+      ctx.strokeStyle = `hsla(${H},${S}%,${L + 16}%,0.42)`;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Bell body
+    const bh = R * 0.82;
+
+    const traceBell = () => {
+      ctx.beginPath();
+      ctx.moveTo(-R, 0);
+      ctx.bezierCurveTo(-R * 1.02, -bh * 0.65, -R * 0.42, -bh * 1.08, 0, -bh * 1.05);
+      ctx.bezierCurveTo(R * 0.42, -bh * 1.08, R * 1.02, -bh * 0.65, R, 0);
+      // Velarium — inward-curving lip at bell opening
+      ctx.bezierCurveTo(R * 0.58, R * 0.28, R * 0.16, R * 0.36, 0, R * 0.3);
+      ctx.bezierCurveTo(-R * 0.16, R * 0.36, -R * 0.58, R * 0.28, -R, 0);
+      ctx.closePath();
+    };
+
+    traceBell();
+    const fill = ctx.createRadialGradient(-R * 0.2, -R * 0.45, R * 0.05, 0, 0, R * 1.05);
+    fill.addColorStop(0, `hsla(${H},${S}%,${L + 24}%,0.62)`);
+    fill.addColorStop(0.4, `hsla(${H},${S}%,${L}%,0.40)`);
+    fill.addColorStop(0.75, `hsla(${H},${Math.max(0, S - 8)}%,${L - 14}%,0.25)`);
+    fill.addColorStop(1, `hsla(${H},${S}%,${L - 20}%,0.08)`);
+    ctx.fillStyle = fill;
+    ctx.fill();
+
+    traceBell();
+    ctx.strokeStyle = `hsla(${H},${S}%,${L + 28}%,0.62)`;
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+
+    // Subumbrella radial ribs
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * TAU;
+      const ex = Math.cos(a) * R * 0.8;
+      const ey = Math.sin(a) * R * 0.45 - R * 0.1;
+      if (ey < R * 0.15) {
+        ctx.beginPath();
+        ctx.moveTo(0, -R * 0.05);
+        ctx.quadraticCurveTo(ex * 0.5, ey * 0.55, ex, ey);
+        ctx.strokeStyle = `hsla(${H},${S}%,${L + 32}%,0.13)`;
+        ctx.lineWidth = 0.65;
+        ctx.stroke();
+      }
+    }
+
+    // Gonad detail (four-lobed, visible through translucent bell)
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU + Math.PI / 4;
+      const gx = Math.cos(a) * R * 0.3;
+      const gy = Math.sin(a) * R * 0.15 - R * 0.32;
+      ctx.beginPath();
+      ctx.ellipse(gx, gy, R * 0.13, R * 0.08, a, 0, TAU);
+      ctx.fillStyle = `hsla(${H},${S}%,${L - 8}%,0.18)`;
+      ctx.fill();
+    }
+
+    // Specular highlight
+    ctx.beginPath();
+    ctx.ellipse(-R * 0.22, -R * 0.52, R * 0.19, R * 0.09, -0.38, 0, TAU);
+    ctx.fillStyle = `hsla(${H},15%,97%,0.2)`;
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+// Scale jellyfish count to viewport size
+const count = Math.max(5, Math.min(13, Math.floor(canvas.width * canvas.height / 52000)));
+const jellies = Array.from({ length: count }, () => {
+  const j = new Jellyfish();
+  j.age = Math.floor(rnd(0, 80));
+  return j;
+});
+
+function drawRays() {
+  ctx.save();
+  for (let i = 0; i < 6; i++) {
+    const cx = canvas.width * (0.05 + i * 0.19);
+    const hw = canvas.width * 0.06;
+    const depth = canvas.height * 0.55;
+    const g = ctx.createLinearGradient(cx, 0, cx, depth);
+    g.addColorStop(0, 'rgba(40,100,180,0.05)');
+    g.addColorStop(1, 'rgba(40,100,180,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(cx - hw, 0);
+    ctx.lineTo(cx + hw, 0);
+    ctx.lineTo(cx + hw * 0.4, depth);
+    ctx.lineTo(cx - hw * 0.4, depth);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+(function loop() {
+  requestAnimationFrame(loop);
+
+  const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  bg.addColorStop(0, '#010c1e');
+  bg.addColorStop(0.4, '#051b38');
+  bg.addColorStop(1, '#010812');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawRays();
+
+  ctx.save();
+  for (const p of particles) {
+    p.y -= p.vy;
+    if (p.y < -4) { p.y = canvas.height + 4; p.x = rnd(0, canvas.width); }
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = '#7fc5d8';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  for (const j of jellies) {
+    j.update();
+    j.draw();
+  }
+}());
+</script>
+</body>
+</html>
