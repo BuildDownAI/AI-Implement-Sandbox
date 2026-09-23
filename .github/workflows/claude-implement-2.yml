@@ -1,0 +1,367 @@
+# Synced to target repos by sync-workflow.yml.
+# All pipeline logic lives in the runner image (ghcr.io/builddownai/ai-implement-runner).
+# Do not edit in target repos.
+#
+# Required secrets:
+#   AI_IMPLEMENT_APP_ID      - GitHub App numeric ID
+#   AI_IMPLEMENT_PRIVATE_KEY - GitHub App PEM private key
+#   ANTHROPIC_API_KEY        - Anthropic API key
+#   CLAUDE_CODE_OAUTH_TOKEN  - Claude Code OAuth token (preferred over API key)
+#
+# Additional secret (Bedrock provider):
+#   AWS_BEDROCK_ROLE_ARN     - IAM role ARN trusted to GitHub OIDC; needs bedrock:InvokeModel
+#
+# Optional secret (forwarded hook environment):
+#   AI_IMPLEMENT_FORWARDED_ENV - KEY=VALUE lines (one per line) exposed to setup/verify hooks.
+#                                Read as ONE literal secret. Never serialize the whole secrets
+#                                context: that trips GitHub's malicious-workflow scanner and
+#                                gates every dispatch behind manual approval (AII-502).
+#                                Values reach hooks only; the runner strips them from the model process.
+#
+# Optional variables (private npm registry, read by the built-in install step):
+#   AI_IMPLEMENT_NPM_REGISTRY  - Registry URL, e.g. https://your.registry.example/path/
+#   AI_IMPLEMENT_NPM_SCOPE     - Optional comma-separated npm scope(s) mapped to that registry, e.g. "@acme".
+#   The registry token is NOT a separate secret: put an NPM_TOKEN=<token> line in
+#   AI_IMPLEMENT_FORWARDED_ENV above. When NPM_TOKEN and the registry are both present the
+#   runner writes a per-run npm user config for the install command only, then removes it —
+#   no target-repo .npmrc needed, and the token never reaches the model process.
+#
+# Required repo setting:
+#   Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests" → ENABLED
+#
+# Optional repository or organization variables:
+#   AI_IMPLEMENT_RUNNER_IMAGE                    - Default runner image for this repo/org.
+#   AI_IMPLEMENT_ALLOWED_RUNNER_IMAGE_PREFIXES   - Extra image prefixes allowed in addition to ghcr.io/builddownai/ and the repo owner's own ghcr.io/<owner>/ namespace (auto-trusted).
+#   AI_IMPLEMENT_RUNNER_LABEL                    - runs-on label for the implement job (default ubuntu-latest); set to a larger-runner label to speed up CPU-bound test suites.
+#
+# Private runner images:
+#   The implement job runs the runner image as its container. When that image is
+#   private on GHCR, the pull is authenticated with the job's GITHUB_TOKEN via the
+#   container `credentials:` block below, which is why this workflow requests
+#   `packages: read`. The token can only read private packages owned by THIS repo's
+#   org/account, so a private runner image must live in the same org (e.g. a repo
+#   that pins its own image via .ai-implement/image.yml — the allowlist auto-trusts
+#   the owner's ghcr.io/<owner>/ namespace, so no extra prefix variable is needed).
+#   A private image in a different org needs a PAT swapped into `credentials.password`.
+#   Because Fly Machines and local Docker pull the runner image anonymously, a private
+#   runner image is only usable in this GitHub Actions execution mode.
+
+name: Claude AI Implementation
+# Display-only: the ticket key also rides inside run_config, which run-name expressions cannot decode.
+run-name: ${{ inputs.issue_identifier && format('Claude AI Implementation — {0}', inputs.issue_identifier) || 'Claude AI Implementation' }}
+
+on:
+  workflow_dispatch:
+    # A top-level input is only for a value GitHub must evaluate before any step
+    # runs (routing, image selection, timeout) or a secret this workflow masks.
+    # Everything else rides inside run_config — see docs/workflow-envelope.md.
+    inputs:
+      run_config:
+        description: "base64 JSON RunConfig envelope — see docs/workflow-envelope.md"
+        required: true
+        type: string
+      issue_identifier:
+        description: "Ticket key for the run title; display only — run_config is authoritative"
+        required: false
+        type: string
+        default: ""
+      runner_image:
+        description: "Override the runner image for this run (must match ghcr.io/builddownai/*, the repo owner's ghcr.io/<owner>/*, or AI_IMPLEMENT_ALLOWED_RUNNER_IMAGE_PREFIXES)"
+        required: false
+        type: string
+        default: ""
+      job_timeout_minutes:
+        description: "Per-project job timeout in minutes, must be a positive integer (empty = 90)"
+        required: false
+        type: string
+        default: ""
+      provider:
+        description: "Claude provider: 'anthropic' (default) or 'bedrock'"
+        required: false
+        type: string
+        default: "anthropic"
+      aws_region:
+        description: "AWS region for Bedrock (required when provider=bedrock)"
+        required: false
+        type: string
+        default: ""
+      run_token:
+        description: "HMAC bearer token authorizing the result POST; empty skips callback"
+        required: false
+        type: string
+        default: ""
+      run_progress_token:
+        description: "HMAC bearer token authorizing progress POSTs; empty skips progress callback"
+        required: false
+        type: string
+        default: ""
+      run_publication_token:
+        description: "Dedicated bearer token authorizing one publication-token mint; empty uses the workflow GitHub App token"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+  packages: read
+
+jobs:
+  validate-runner-image:
+    runs-on: ubuntu-latest
+    outputs:
+      runner_image: ${{ steps.resolve.outputs.runner_image }}
+    steps:
+      - name: Resolve and validate runner image
+        id: resolve
+        env:
+          REQUESTED_RUNNER_IMAGE: ${{ inputs.runner_image }}
+          CONFIGURED_RUNNER_IMAGE: ${{ vars.AI_IMPLEMENT_RUNNER_IMAGE }}
+          EXTRA_ALLOWED_PREFIXES: ${{ vars.AI_IMPLEMENT_ALLOWED_RUNNER_IMAGE_PREFIXES }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          if [ -z "$owner" ]; then
+            echo "::error::GITHUB_REPOSITORY_OWNER is empty; cannot derive the owner image prefix." >&2
+            exit 1
+          fi
+
+          # Resolution ladder: dispatch input > .ai-implement/image.yml > repo/org var > upstream default.
+          runner_image="${REQUESTED_RUNNER_IMAGE:-}"
+
+          # Read the per-repo override from the DEFAULT branch only — never a PR head — so a
+          # pull request cannot choose the image its privileged run executes in. `gh api` with
+          # no ?ref= resolves the default branch; mirrors src/repo-image.ts parsing.
+          if [ -z "$runner_image" ]; then
+            if raw="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.ai-implement/image.yml" \
+                  -H "Accept: application/vnd.github.raw+json" 2>/dev/null)"; then
+              runner_image="$(printf '%s\n' "$raw" | sed -n 's/^image:[[:space:]]*\([^[:space:]][^[:space:]]*\)[[:space:]]*$/\1/p' | head -n1)" || true
+            fi
+          fi
+
+          if [ -z "$runner_image" ]; then
+            runner_image="${CONFIGURED_RUNNER_IMAGE:-}"
+          fi
+          if [ -z "$runner_image" ]; then
+            runner_image="ghcr.io/builddownai/ai-implement-runner:latest"
+          fi
+
+          case "$runner_image" in
+            *[!A-Za-z0-9._:/@-]*)
+              echo "::error::runner_image \"$runner_image\" contains invalid characters for a container image reference." >&2
+              exit 1
+              ;;
+          esac
+
+          allowed_prefixes="ghcr.io/builddownai/,ghcr.io/${owner}/"
+          if [ -n "${EXTRA_ALLOWED_PREFIXES:-}" ]; then
+            allowed_prefixes="${allowed_prefixes},${EXTRA_ALLOWED_PREFIXES}"
+          fi
+
+          allowed=false
+          IFS=',' read -ra prefixes <<< "$allowed_prefixes"
+          for raw_prefix in "${prefixes[@]}"; do
+            prefix="$(echo "$raw_prefix" | xargs)"
+            [ -z "$prefix" ] && continue
+            # Literal prefix match — quote "$prefix" so glob metacharacters in an
+            # operator-supplied AI_IMPLEMENT_ALLOWED_RUNNER_IMAGE_PREFIXES can't widen it.
+            if [[ "$runner_image" == "$prefix"* ]]; then
+              allowed=true
+              break
+            fi
+          done
+
+          if [ "$allowed" != "true" ]; then
+            echo "::error::runner_image \"$runner_image\" is not allowed." >&2
+            echo "::error::Allowed prefixes:" >&2
+            for raw_prefix in "${prefixes[@]}"; do
+              prefix="$(echo "$raw_prefix" | xargs)"
+              [ -z "$prefix" ] && continue
+              echo "::error::- $prefix" >&2
+            done
+            echo "::error::To allow this image, set the repository or organization variable AI_IMPLEMENT_ALLOWED_RUNNER_IMAGE_PREFIXES=<prefix>." >&2
+            echo "::error::Example: AI_IMPLEMENT_ALLOWED_RUNNER_IMAGE_PREFIXES=ghcr.io/acme/" >&2
+            echo "::error::Use comma-separated prefixes for multiple registries or namespaces." >&2
+            exit 1
+          fi
+
+          echo "runner_image=$runner_image" >> "$GITHUB_OUTPUT"
+          echo "[dispatch-inputs] resolved runner_image: $runner_image"
+
+  implement:
+    needs: validate-runner-image
+    # Default GitHub-hosted runners are 2 vCPU; the test suites Claude runs are
+    # CPU-bound and scale ~linearly with cores. Set AI_IMPLEMENT_RUNNER_LABEL to
+    # a larger-runner label (e.g. ubuntu-latest-4-cores) to speed those up.
+    runs-on: ${{ vars.AI_IMPLEMENT_RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: ${{ inputs.job_timeout_minutes && fromJSON(inputs.job_timeout_minutes) || 90 }}
+    container:
+      image: ${{ needs.validate-runner-image.outputs.runner_image }}
+      # Authenticate the image pull so a private GHCR runner image owned by this
+      # repo's org can be pulled (packages: read scopes GITHUB_TOKEN for this).
+      # Harmless for the public default image. Cross-org private images need a PAT
+      # swapped in for the password — see the header comment.
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # Read the event file without exposing token-valued env/script metadata: GitHub
+      # prints those headers before executing the first add-mask command (AII-676).
+      - name: Mask runner callback tokens
+        run: |
+          set +x
+          jq -r '
+            .inputs // {}
+            | [.run_token, .run_progress_token, .run_publication_token]
+            | if all(.[]; . == null or type == "string") then .[]
+              else error("Callback tokens must be strings") end
+            | select(. != null and . != "")
+            | gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A")
+            | "::add-mask::" + .
+          ' "$GITHUB_EVENT_PATH"
+
+      - name: Print dispatch inputs
+        env:
+          RUN_CONFIG: ${{ inputs.run_config }}
+          PROVIDER: ${{ inputs.provider }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          JOB_TIMEOUT_MINUTES: ${{ inputs.job_timeout_minutes }}
+          RUNNER_IMAGE: ${{ inputs.runner_image }}
+          HAS_RUN_TOKEN: "${{ inputs.run_token != '' }}"
+          HAS_RUN_PROGRESS_TOKEN: "${{ inputs.run_progress_token != '' }}"
+          HAS_PUBLICATION_TOKEN: "${{ inputs.run_publication_token != '' }}"
+        run: |
+          echo "[dispatch-inputs] provider: $PROVIDER"
+          echo "[dispatch-inputs] aws_region: $AWS_REGION"
+          echo "[dispatch-inputs] job_timeout_minutes: $JOB_TIMEOUT_MINUTES"
+          echo "[dispatch-inputs] runner_image: $RUNNER_IMAGE"
+          echo "[dispatch-inputs] run_token: $( [ "$HAS_RUN_TOKEN" = "true" ] && echo "<redacted>" || echo "(empty)" )"
+          echo "[dispatch-inputs] run_progress_token: $( [ "$HAS_RUN_PROGRESS_TOKEN" = "true" ] && echo "<redacted>" || echo "(empty)" )"
+          echo "[dispatch-inputs] run_publication_token: $( [ "$HAS_PUBLICATION_TOKEN" = "true" ] && echo "<redacted>" || echo "(empty)" )"
+          # The run_config envelope is documented secret-free: the runner tokens
+          # deliberately stay top-level inputs so this workflow can ::add-mask::
+          # them before the runner starts (src/run-config.ts and
+          # docs/workflow-envelope.md), so decoding it here cannot leak a credential.
+          # jq quotes and indents every value, so no decoded line can begin with
+          # "::" and forge a workflow command.
+          echo "[dispatch-inputs] run_config:"
+          printf '%s' "$RUN_CONFIG" | base64 -d | jq . \
+            || echo "[dispatch-inputs] run_config could not be decoded"
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        with:
+          app-id: ${{ secrets.AI_IMPLEMENT_APP_ID }}
+          private-key: ${{ secrets.AI_IMPLEMENT_PRIVATE_KEY }}
+          # Explicit permissions (AII-450). Implicit mode inherits "all installation
+          # permissions", which made a missing scope a push-time mystery — two runs
+          # died pushing a workflow file with a buried remote-rejected error while
+          # every permission surface CLAIMED workflows:write. Explicit scopes make
+          # the mint fail loudly, by name, at mint time instead.
+          permission-contents: write
+          permission-workflows: write
+          permission-pull-requests: write
+          permission-issues: write
+          permission-metadata: read
+
+      - name: Validate Bedrock inputs
+        if: inputs.provider == 'bedrock'
+        env:
+          AWS_REGION: ${{ inputs.aws_region }}
+          ROLE_ARN: ${{ secrets.AWS_BEDROCK_ROLE_ARN }}
+        run: |
+          if [ -z "$AWS_REGION" ]; then
+            echo "::error::provider=bedrock but aws_region dispatch input is empty."
+            echo "::error::Set awsRegion on this team's mapping in the orchestrator admin UI."
+            exit 1
+          fi
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::provider=bedrock but AWS_BEDROCK_ROLE_ARN repo secret is not set."
+            echo "::error::Add the IAM role ARN trusted to GitHub OIDC with bedrock:InvokeModel permission."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (Bedrock)
+        if: inputs.provider == 'bedrock'
+        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c
+        with:
+          role-to-assume: ${{ secrets.AWS_BEDROCK_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+          role-session-duration: 14400
+
+      # Container jobs default to sh -e; this step uses bash syntax and requires shell: bash.
+      # Reads ONE literal repository secret. Never serialize the whole secrets context: that
+      # pattern trips GitHub's malicious-workflow scanner and gates every dispatch (AII-502).
+      - name: Forward repository secrets
+        env:
+          FORWARDED_ENV: ${{ secrets.AI_IMPLEMENT_FORWARDED_ENV }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${FORWARDED_ENV:-}" ]; then
+            exit 0
+          fi
+          reserved="GITHUB_TOKEN AI_IMPLEMENT_APP_ID AI_IMPLEMENT_PRIVATE_KEY ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN AWS_BEDROCK_ROLE_ARN GH_TOKEN GITHUB_ENTERPRISE_TOKEN GH_ENTERPRISE_TOKEN GIT_PASSWORD"
+          validated=""
+          while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%$'\r'}"
+            [ -z "$line" ] && continue
+            case "$line" in \#*) continue ;; esac
+            if [[ "$line" != *=* ]]; then
+              echo "::error::AI_IMPLEMENT_FORWARDED_ENV: a line has no '=' separator (expected KEY=VALUE)."
+              exit 1
+            fi
+            name="${line%%=*}"
+            val="${line#*=}"
+            if ! [[ "$name" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
+              echo "::error::AI_IMPLEMENT_FORWARDED_ENV: \"$name\" does not match the required format ^[A-Z][A-Z0-9_]*\$."
+              exit 1
+            fi
+            for r in $reserved; do
+              if [ "$name" = "$r" ]; then
+                echo "::error::AI_IMPLEMENT_FORWARDED_ENV: \"$name\" is a reserved name and cannot be forwarded."
+                exit 1
+              fi
+            done
+            if [[ "$name" == RUN_* ]] || [[ "$name" == AI_IMPLEMENT_* ]]; then
+              echo "::error::AI_IMPLEMENT_FORWARDED_ENV: \"$name\" uses a reserved prefix (RUN_ or AI_IMPLEMENT_) and cannot be forwarded."
+              exit 1
+            fi
+            if [ -z "$val" ]; then
+              echo "::error::AI_IMPLEMENT_FORWARDED_ENV: \"$name\" has an empty value."
+              exit 1
+            fi
+            echo "::add-mask::$val"
+            delim="$(openssl rand -hex 16)"
+            printf '%s<<%s\n%s\n%s\n' "$name" "$delim" "$val" "$delim" >> "$GITHUB_ENV"
+            validated="${validated:+${validated},}${name}"
+          done <<< "$FORWARDED_ENV"
+          if [ -n "$validated" ]; then
+            echo "AI_IMPLEMENT_FORWARDED_SECRETS=${validated}" >> "$GITHUB_ENV"
+            echo "::notice::Forwarding repository secrets to runner environment: ${validated}"
+          fi
+
+      - name: Run pipeline
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          # provider/aws_region stayed TOP-LEVEL inputs under the envelope (they gate the
+          # OIDC credentials step, which runs before run_config is decoded), so the runner
+          # still reads them from env: run-autonomous.ts does `env.PROVIDER || "anthropic"`,
+          # which means a missing PROVIDER silently downgrades every Bedrock repo.
+          PROVIDER: ${{ inputs.provider }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          AI_IMPLEMENT_RUN_CONFIG: ${{ inputs.run_config }}
+          AI_IMPLEMENT_LOG_LEVEL: ${{ vars.AI_IMPLEMENT_LOG_LEVEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          RUN_TOKEN: ${{ inputs.run_token }}
+          RUN_PROGRESS_TOKEN: ${{ inputs.run_progress_token }}
+          RUN_PUBLICATION_TOKEN: ${{ inputs.run_publication_token }}
+          AI_IMPLEMENT_NPM_REGISTRY: ${{ vars.AI_IMPLEMENT_NPM_REGISTRY }}
+          AI_IMPLEMENT_NPM_SCOPE: ${{ vars.AI_IMPLEMENT_NPM_SCOPE }}
+        run: /opt/ai-implement/entrypoint.sh
