@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jellyfish</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const JELLYFISH_COUNT = 12;
+  const HUES = [200, 220, 260, 290, 310, 175, 240, 180];
+
+  function rand(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function createJellyfish(x, y) {
+    const hue = HUES[Math.floor(Math.random() * HUES.length)];
+    const radius = rand(20, 80);
+    const angle = rand(0, Math.PI * 2);
+    const speed = rand(0.2, 1.2);
+    return {
+      x: x !== undefined ? x : rand(0, canvas.width),
+      y: y !== undefined ? y : rand(0, canvas.height),
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      radius,
+      hue,
+      saturation: rand(60, 100),
+      lightness: rand(55, 80),
+      alpha: rand(0.4, 0.75),
+      phase: rand(0, Math.PI * 2),
+      pulseSpeed: rand(0.02, 0.06),
+      tentacleCount: Math.floor(rand(6, 14)),
+      tentacleLength: radius * rand(2.0, 3.5),
+      tentacleWaveSpeed: rand(0.03, 0.08),
+      tentacleWaveAmp: rand(0.3, 0.8),
+    };
+  }
+
+  const jellyfish = Array.from({ length: JELLYFISH_COUNT }, () => createJellyfish());
+
+  function drawBackground() {
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, '#020b18');
+    grad.addColorStop(0.5, '#041525');
+    grad.addColorStop(1, '#061020');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function drawJellyfish(jf, t) {
+    const pulse = Math.sin(t * jf.pulseSpeed + jf.phase);
+    const bellScale = 1 + pulse * 0.12;
+    const bellH = jf.radius * bellScale;
+    const bellW = jf.radius * (1 - pulse * 0.05);
+
+    ctx.save();
+    ctx.translate(jf.x, jf.y);
+
+    // Glow effect
+    const glowRadius = bellW * 1.6;
+    const glow = ctx.createRadialGradient(0, 0, bellW * 0.2, 0, 0, glowRadius);
+    glow.addColorStop(0, `hsla(${jf.hue}, ${jf.saturation}%, ${jf.lightness + 15}%, ${jf.alpha * 0.5})`);
+    glow.addColorStop(1, `hsla(${jf.hue}, ${jf.saturation}%, ${jf.lightness}%, 0)`);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, glowRadius, glowRadius * 0.7, 0, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    // Tentacles
+    ctx.save();
+    const tentacleAlpha = jf.alpha * 0.65;
+    for (let i = 0; i < jf.tentacleCount; i++) {
+      const tFrac = i / jf.tentacleCount;
+      const spreadAngle = (tFrac - 0.5) * 1.2;
+      const baseX = Math.sin(spreadAngle) * bellW * 0.9;
+      const len = jf.tentacleLength * (0.7 + 0.3 * Math.sin(tFrac * Math.PI));
+      const wave = jf.tentacleWaveAmp * bellW;
+      const phase = jf.phase + tFrac * Math.PI * 2;
+      const cp1x = baseX + Math.sin(t * jf.tentacleWaveSpeed + phase) * wave;
+      const cp1y = len * 0.4;
+      const cp2x = baseX + Math.sin(t * jf.tentacleWaveSpeed + phase + 1.2) * wave * 1.3;
+      const cp2y = len * 0.75;
+      const endX = baseX + Math.sin(t * jf.tentacleWaveSpeed + phase + 2.4) * wave * 0.8;
+      const endY = len;
+
+      const tentGrad = ctx.createLinearGradient(baseX, 0, endX, endY);
+      tentGrad.addColorStop(0, `hsla(${jf.hue}, ${jf.saturation}%, ${jf.lightness}%, ${tentacleAlpha})`);
+      tentGrad.addColorStop(1, `hsla(${jf.hue}, ${jf.saturation}%, ${jf.lightness}%, 0)`);
+
+      ctx.beginPath();
+      ctx.moveTo(baseX, bellH * 0.7);
+      ctx.bezierCurveTo(cp1x, bellH * 0.7 + cp1y, cp2x, bellH * 0.7 + cp2y, endX, bellH * 0.7 + endY);
+      ctx.strokeStyle = tentGrad;
+      ctx.lineWidth = 1 + (1 - tFrac * 0.5) * 1.5 * (jf.radius / 60);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Bell body
+    const bodyGrad = ctx.createRadialGradient(-bellW * 0.3, -bellH * 0.3, bellW * 0.1, 0, 0, bellW * 1.1);
+    bodyGrad.addColorStop(0, `hsla(${jf.hue}, ${jf.saturation}%, ${Math.min(95, jf.lightness + 25)}%, ${jf.alpha * 0.9})`);
+    bodyGrad.addColorStop(0.5, `hsla(${jf.hue}, ${jf.saturation}%, ${jf.lightness}%, ${jf.alpha})`);
+    bodyGrad.addColorStop(1, `hsla(${jf.hue}, ${jf.saturation}%, ${jf.lightness - 15}%, ${jf.alpha * 0.6})`);
+
+    ctx.beginPath();
+    ctx.moveTo(-bellW, 0);
+    ctx.bezierCurveTo(-bellW, -bellH * 1.2, bellW, -bellH * 1.2, bellW, 0);
+    ctx.bezierCurveTo(bellW * 0.9, bellH * 0.55, -bellW * 0.9, bellH * 0.55, -bellW, 0);
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+
+    // Inner dome highlight
+    ctx.beginPath();
+    ctx.ellipse(-bellW * 0.2, -bellH * 0.5, bellW * 0.4, bellH * 0.3, -0.2, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${jf.hue}, 40%, 98%, ${0.12 + pulse * 0.06})`;
+    ctx.fill();
+
+    // Rim fringe
+    ctx.beginPath();
+    ctx.moveTo(-bellW, 0);
+    const fringeCount = Math.floor(jf.tentacleCount * 0.8);
+    for (let i = 0; i <= fringeCount; i++) {
+      const fx = -bellW + (2 * bellW * i) / fringeCount;
+      const fy = Math.sin((i / fringeCount) * Math.PI * (fringeCount)) * bellH * 0.12;
+      ctx.lineTo(fx, fy);
+    }
+    ctx.strokeStyle = `hsla(${jf.hue}, ${jf.saturation}%, ${jf.lightness + 10}%, ${jf.alpha * 0.7})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function wrapAround(jf) {
+    const margin = jf.radius * 4;
+    if (jf.x > canvas.width + margin) jf.x = -margin;
+    else if (jf.x < -margin) jf.x = canvas.width + margin;
+    if (jf.y > canvas.height + margin) jf.y = -margin;
+    else if (jf.y < -margin) jf.y = canvas.height + margin;
+  }
+
+  let t = 0;
+  function animate() {
+    t++;
+    drawBackground();
+
+    // Sort back-to-front by radius so larger jellyfish appear behind smaller
+    const sorted = [...jellyfish].sort((a, b) => b.radius - a.radius);
+    for (const jf of sorted) {
+      jf.x += jf.vx;
+      jf.y += jf.vy;
+      wrapAround(jf);
+      drawJellyfish(jf, t);
+    }
+
+    requestAnimationFrame(animate);
+  }
+
+  animate();
+</script>
+</body>
+</html>
