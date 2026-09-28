@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { projectSchema } from "./schema";
 import { revalidatePath } from "next/cache";
 import { type FormState, toFieldErrors } from "@/lib/form-state";
+import { canTransition } from "@/lib/project-status";
 
 export async function createProject(_prevState: FormState, formData: FormData): Promise<FormState> {
     // extracts a user's ID from claims since it's not known at project creation
@@ -42,16 +43,42 @@ export async function updateProject(_prevState: FormState, formData: FormData): 
     if (!result.success) {
         return { fieldErrors: toFieldErrors(result.error) };
     }
-    
+
     const supabase = await createClient();
-    const { error } = await supabase.from("projects")
+    const { data: current, error: readError } = await supabase
+        .from("projects")
+        .select("status")
+        .eq("id", id)
+        .maybeSingle();
+    if (readError) {
+        return { error: readError.message };
+    }
+    if (!current) {
+        return { error: "Project not found" };
+    }
+
+    if (!canTransition(current.status, result.data.status)) {
+        return {
+            fieldErrors: {
+                status: `A project cannot move from ${current.status} to ${result.data.status}.`,
+            },
+        };
+    }
+
+    const { data: updated, error: writeError } = await supabase
+        .from("projects")
         .update({
             ...result.data,
             updated_at: new Date().toISOString(),
         })
-        .eq("id", id);
-    if (error) {
-        return { error: error.message };
+        .eq("id", id)
+        .eq("status", current.status)
+        .select("id");
+    if (writeError) {
+        return { error: writeError.message };
+    }
+    if (!updated || updated.length === 0) {
+        return { error: "This project changed while you were editing. Reload the page and try again." };
     }
 
     revalidatePath("/projects");

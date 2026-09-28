@@ -11,8 +11,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { emptyFormState } from "@/lib/form-state";
 import { SubmitButton } from "@/components/submit-button";
-
-type ProjectStatus = "draft" | "active" | "archived";
+import { allowedNextStatuses, ProjectStatus } from "@/lib/project-status";
 
 export function EditProjectForm({ project }: { project: Project }) {
     const [state, formAction] = useActionState(updateProject, emptyFormState);
@@ -68,9 +67,11 @@ export function EditProjectForm({ project }: { project: Project }) {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectGroup>
-                                <SelectItem value="draft"> Draft </SelectItem>
-                                <SelectItem value="active"> Active </SelectItem>
-                                <SelectItem value="archived"> Archived </SelectItem>
+                                {allowedNextStatuses(project.status).map((s) => (
+                                    <SelectItem key={s} value={s}>
+                                        {s.charAt(0).toUpperCase() + s.slice(1)}
+                                    </SelectItem>
+                                ))}
                             </SelectGroup>
                         </SelectContent>
                     </Select>

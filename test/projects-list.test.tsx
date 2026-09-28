@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import ProjectsPage from "@/app/(app)/projects/page";
 
@@ -21,6 +21,10 @@ vi.mock("@/lib/supabase/server", () => ({
 describe("Projects list page", () => {
   beforeEach(() => {
     mockRange.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const renderPage = async (searchParams: Record<string, string> = {}) => {
@@ -53,6 +57,7 @@ describe("Projects list page", () => {
           status: "active",
           created_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
+          status_changed_at: "2026-01-01T00:00:00Z",
         },
         {
           id: "2",
@@ -62,6 +67,7 @@ describe("Projects list page", () => {
           status: "draft",
           created_at: "2026-01-02T00:00:00Z",
           updated_at: "2026-01-02T00:00:00Z",
+          status_changed_at: "2026-01-02T00:00:00Z",
         },
       ],
       count: 2,
@@ -86,6 +92,7 @@ describe("Projects list page", () => {
           status: "active",
           created_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
+          status_changed_at: "2026-01-01T00:00:00Z",
         },
       ],
       count: 1,
@@ -111,6 +118,7 @@ describe("Projects list page", () => {
           status: "active",
           created_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
+          status_changed_at: "2026-01-01T00:00:00Z",
         },
       ],
       count: 25,
@@ -138,5 +146,30 @@ describe("Projects list page", () => {
     expect(
       screen.getByText(/permission denied for table projects/i),
     ).toBeInTheDocument();
+  });
+
+  it("shows stage-age text for each project card", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-05T00:00:00Z"));
+
+    mockRange.mockResolvedValue({
+      data: [
+        {
+          id: "1",
+          user_id: "u",
+          name: "Aged Project",
+          description: null,
+          status: "active",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          status_changed_at: "2026-01-03T00:00:00Z",
+        },
+      ],
+      count: 1,
+      error: null,
+    });
+
+    await renderPage();
+    expect(screen.getByText("In this stage for 2 days")).toBeInTheDocument();
   });
 });

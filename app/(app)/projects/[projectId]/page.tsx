@@ -4,8 +4,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getProject } from '../queries';
+import { getProject, getStatusEvents } from '../queries';
 import { DeleteProjectButton } from './delete-project-button';
+import { StatusTimeline } from './status-timeline';
 
 export const metadata: Metadata = {
     title: "Project",
@@ -25,6 +26,8 @@ export default async function ProjectDetailsPage({ params }: {
     if (!project) {
         notFound();
     }
+
+    const events = await getStatusEvents(project.id);
 
     return (
         <>
@@ -66,6 +69,8 @@ export default async function ProjectDetailsPage({ params }: {
                     <DeleteProjectButton projectId={project.id} projectName={project.name} />
                 </CardFooter>
             </Card>
+
+            <StatusTimeline events={events} />
         </>
     );
 }

@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
+
+Element.prototype.scrollIntoView = vi.fn();
+// @ts-ignore
+Element.prototype.hasPointerCapture = vi.fn();
+// @ts-ignore
+Element.prototype.releasePointerCapture = vi.fn();
 import { EditProjectForm } from "@/app/(app)/projects/[projectId]/edit/form";
 import type { Project } from "@/app/(app)/projects/queries";
 
@@ -50,6 +56,7 @@ const baseProject: Project = {
   status: "active",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
+  status_changed_at: "2026-01-01T00:00:00Z",
 };
 
 describe("EditProjectForm", () => {
@@ -127,5 +134,32 @@ describe("EditProjectForm", () => {
     render(<EditProjectForm project={baseProject} />);
     const button = screen.getByRole("button", { name: /saving/i });
     expect(button).toBeDisabled();
+  });
+
+  it("shows Draft, Active, Archived options for a draft project", () => {
+    render(<EditProjectForm project={{ ...baseProject, status: "draft" }} />);
+    const trigger = screen.getByRole("combobox");
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    const options = screen.getAllByRole("option").map((o) => o.textContent?.trim());
+    expect(options).toEqual(["Draft", "Active", "Archived"]);
+  });
+
+  it("shows Active and Archived options for an active project (no Draft)", () => {
+    render(<EditProjectForm project={{ ...baseProject, status: "active" }} />);
+    const trigger = screen.getByRole("combobox");
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    const options = screen.getAllByRole("option").map((o) => o.textContent?.trim());
+    expect(options).toEqual(["Active", "Archived"]);
+  });
+
+  it("shows Active and Archived options for an archived project (no Draft)", () => {
+    render(<EditProjectForm project={{ ...baseProject, status: "archived" }} />);
+    const trigger = screen.getByRole("combobox");
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    const options = screen.getAllByRole("option").map((o) => o.textContent?.trim());
+    expect(options).toEqual(["Active", "Archived"]);
   });
 });

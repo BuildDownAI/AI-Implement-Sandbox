@@ -63,6 +63,41 @@ export type Database = {
         }
         Relationships: []
       }
+      project_status_events: {
+        Row: {
+          changed_at: string
+          from_status: Database["public"]["Enums"]["project_status"] | null
+          id: string
+          project_id: string
+          to_status: Database["public"]["Enums"]["project_status"]
+          user_id: string
+        }
+        Insert: {
+          changed_at?: string
+          from_status?: Database["public"]["Enums"]["project_status"] | null
+          id?: string
+          project_id: string
+          to_status: Database["public"]["Enums"]["project_status"]
+          user_id: string
+        }
+        Update: {
+          changed_at?: string
+          from_status?: Database["public"]["Enums"]["project_status"] | null
+          id?: string
+          project_id?: string
+          to_status?: Database["public"]["Enums"]["project_status"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_status_events_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           created_at: string
@@ -70,6 +105,7 @@ export type Database = {
           id: string
           name: string
           status: Database["public"]["Enums"]["project_status"]
+          status_changed_at: string
           updated_at: string
           user_id: string
         }
@@ -79,6 +115,7 @@ export type Database = {
           id?: string
           name: string
           status?: Database["public"]["Enums"]["project_status"]
+          status_changed_at?: string
           updated_at?: string
           user_id: string
         }
@@ -88,6 +125,7 @@ export type Database = {
           id?: string
           name?: string
           status?: Database["public"]["Enums"]["project_status"]
+          status_changed_at?: string
           updated_at?: string
           user_id?: string
         }
