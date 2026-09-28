@@ -1,0 +1,4 @@
+# AI-Implement per-repo configuration.
+# `none` turns off the built-in dependency install; scripts/ai-setup.sh
+# (the `setup:` hook in WORKFLOW.md) installs dependencies instead.
+packageManager: none
