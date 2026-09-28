@@ -18,6 +18,10 @@
 
 This repository was created solely to test the functionality of AI-Implement. It is not a production project and contains no real application logic.
 
+## Dependency install
+
+AI-Implement's built-in install is turned off for this repo (`packageManager: none` in `.ai-implement/config.yml`). Dependencies are installed by the `setup:` hook, `scripts/ai-setup.sh`, which runs `npm install --no-save` so the lockfile never changes during a run.
+
 ## Purpose
 
 This repository exists to validate that [AI Implement](https://github.com/BuildDownAI/AI-Implement)'s end-to-end configuration is set up correctly. When the AI agent successfully opens and merges a pull request in this repository, it confirms that the integration between Linear, GitHub, and AI Implement is functioning as expected.
