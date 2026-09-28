@@ -23,6 +23,10 @@ describe("Projects list page", () => {
     mockRange.mockReset();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   const renderPage = async (searchParams: Record<string, string> = {}) => {
     return render(
       await ProjectsPage({
@@ -167,7 +171,5 @@ describe("Projects list page", () => {
 
     await renderPage();
     expect(screen.getByText("In this stage for 2 days")).toBeInTheDocument();
-
-    vi.useRealTimers();
   });
 });
