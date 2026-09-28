@@ -23,7 +23,7 @@ jobs:
             # an organization scoped FLY token is necessary to create and tear down preview deployments
             FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_PREVIEW }}
             FLY_ORG: ${{ vars.FLY_ORG }}
-            APP_NAME: orchestrator-hello-world-test-pr-${{ github.event.pull_request.number }}
+            APP_NAME: ai-implement-sandbox-pr-${{ github.event.pull_request.number }}
             NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
         
