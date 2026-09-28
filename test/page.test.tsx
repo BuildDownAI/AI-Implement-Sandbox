@@ -17,11 +17,11 @@ describe("Home page", () => {
     mockGetClaims.mockReset();
   });
 
-  it("renders the Hello World heading", async () => {
+  it("renders the Hello, AI-Implement heading", async () => {
     mockGetClaims.mockResolvedValue({ data: null });
     render(await Page());
     expect(
-      screen.getByRole("heading", { name: /hello world/i }),
+      screen.getByRole("heading", { name: /hello, ai-implement/i }),
     ).toBeInTheDocument();
   });
 
