@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
+import { formatStageAge } from '@/lib/stage-age';
 import { createClient } from '@/lib/supabase/server';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -25,6 +26,8 @@ export default async function ProjectsPage({ searchParams }: {
     const page = Math.max(1, Number(params.page) || 1);
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
+
+    const now = new Date();
 
     const supabase = await createClient();
     const { data: projects, count, error } = await supabase.from("projects")
@@ -82,6 +85,9 @@ export default async function ProjectsPage({ searchParams }: {
                                                 {project.status}
                                             </Badge>
                                         </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            {formatStageAge(project.status_changed_at, now)}
+                                        </p>
                                         {project.description && (
                                             <CardDescription className="line-clamp-2">
                                                 {project.description}
