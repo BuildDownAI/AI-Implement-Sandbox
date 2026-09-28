@@ -10,7 +10,6 @@
 # with a Bedrock model ID — the workflow will hard-fail otherwise, since
 # Bedrock IDs are account- and region-specific and have no safe default.
 model: claude-sonnet-4-6
-setup: scripts/ai-setup.sh
 
 # Optional: model used for the post-PR gap-analysis step. Pass through as above.
 # Default (if omitted): claude-haiku-4-5-20251001 for anthropic, same as `model`
