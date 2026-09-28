@@ -6,7 +6,6 @@ import { projectSchema } from "./schema";
 import { revalidatePath } from "next/cache";
 import { type FormState, toFieldErrors } from "@/lib/form-state";
 import { canTransition } from "@/lib/project-status";
-import type { ProjectStatus } from "@/lib/project-status";
 
 export async function createProject(_prevState: FormState, formData: FormData): Promise<FormState> {
     // extracts a user's ID from claims since it's not known at project creation
@@ -58,7 +57,7 @@ export async function updateProject(_prevState: FormState, formData: FormData): 
         return { error: "Project not found" };
     }
 
-    if (!canTransition(current.status as ProjectStatus, result.data.status)) {
+    if (!canTransition(current.status, result.data.status)) {
         return {
             fieldErrors: {
                 status: `A project cannot move from ${current.status} to ${result.data.status}.`,

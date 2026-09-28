@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { canTransition } from "@/lib/project-status";
 
 const redirectMock = vi.hoisted(() => vi.fn(() => { throw new Error("NEXT_REDIRECT"); }));
 vi.mock("next/navigation", () => ({ redirect: redirectMock }));
@@ -30,14 +29,6 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-vi.mock("@/lib/project-status", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/project-status")>("@/lib/project-status");
-  return {
-    ...actual,
-    canTransition: vi.fn((from: string, to: string) => actual.canTransition(from as never, to as never)),
-  };
-});
-
 import { updateProject } from "@/app/(app)/projects/actions";
 
 function form(fields: Record<string, string>) {
@@ -56,10 +47,6 @@ describe("updateProject transition rules", () => {
     db.updateCalled = false;
     redirectMock.mockClear();
     revalidatePathMock.mockClear();
-    vi.mocked(canTransition).mockImplementation((from, to) => {
-      if (to === "draft") return from === "draft";
-      return true;
-    });
   });
 
   it("returns error when read fails", async () => {
@@ -78,7 +65,6 @@ describe("updateProject transition rules", () => {
 
   it("rejects active → draft with a status field error and never updates", async () => {
     db.read = { data: { status: "active" }, error: null };
-    vi.mocked(canTransition).mockReturnValue(false);
     const state = await updateProject({}, form({ id: "p1", name: "X", status: "draft" }));
     expect(state.fieldErrors?.status).toBe("A project cannot move from active to draft.");
     expect(db.updateCalled).toBe(false);
@@ -111,5 +97,14 @@ describe("updateProject transition rules", () => {
     db.write = { data: [{ id: "p1" }], error: null };
     await expect(updateProject({}, form({ id: "p1", name: "X", status: "active" }))).rejects.toThrow("NEXT_REDIRECT");
     expect(db.updateEqs).toContainEqual(["status", "active"]);
+  });
+
+  it("allows archived → active (revive path) and updates with .eq('status', 'archived')", async () => {
+    db.read = { data: { status: "archived" }, error: null };
+    db.write = { data: [{ id: "p1" }], error: null };
+    await expect(updateProject({}, form({ id: "p1", name: "X", status: "active" }))).rejects.toThrow("NEXT_REDIRECT");
+    expect(db.updateCalled).toBe(true);
+    expect(db.updateEqs).toContainEqual(["status", "archived"]);
+    expect(redirectMock).toHaveBeenCalledWith("/projects/p1");
   });
 });
