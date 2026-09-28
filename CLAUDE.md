@@ -205,6 +205,7 @@ Vitest + React Testing Library, configured in [vitest.config.ts](vitest.config.t
 - **Anchored regex for `getByLabelText`**: substring matches like `/new password/i` match *every* label containing those words ("New password" *and* "Confirm new password"). RTL throws on multiple matches. Anchor with `^...$` (e.g. `/^new password$/i`) or use `{ exact: true }`.
 
 Pattern for new pages: tests live in [test/](test/) (flat — not nested next to the source). Don't bother trying to unit-test middleware, Route Handlers, or Server Actions directly without an integration-test setup; cover them via the manual verification steps in each block's plan.
+- **CI** — [.github/workflows/ci.yml](.github/workflows/ci.yml) runs `npm test` then `npm run build` on every `pull_request` and on every push to `main`. The job is named `test-and-build`.
 
 ### Deployment (Fly.io)
 
