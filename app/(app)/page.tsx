@@ -9,7 +9,7 @@ export default async function Home() {
 
     return (
         <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center">
-            <h1 className="text-4xl font-bold">Hello World</h1>
+            <h1 className="text-4xl font-bold">Hello, AI-Implement</h1>
             <p className="max-w-prose text-center text-muted-foreground">
                 This page is served by a minimal Next.js + shadcn application used to
                 validate the end-to-end AI-Implement integration. Its only purpose is
