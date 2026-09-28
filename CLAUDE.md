@@ -215,7 +215,7 @@ Pattern for new pages: tests live in [test/](test/) (flat — not nested next to
 Two GitHub Actions workflows orchestrate deploys:
 
 - [.github/workflows/fly-deploy.yml](.github/workflows/fly-deploy.yml) — production deploy on push to `main`. Uses `FLY_API_TOKEN` (deploy-scoped to the production app).
-- [.github/workflows/fly-preview.yml](.github/workflows/fly-preview.yml) — per-PR preview deploys. Creates `orchestrator-hello-world-test-pr-<N>` on PR open, deploys on each push, destroys on PR close. Uses `FLY_API_TOKEN_PREVIEW` (org-scoped, can create apps) and `vars.FLY_ORG` (the Fly organization slug).
+- [.github/workflows/fly-preview.yml](.github/workflows/fly-preview.yml) — per-PR preview deploys. Creates `ai-implement-sandbox-pr-<N>` on PR open, deploys on each push, destroys on PR close. Uses `FLY_API_TOKEN_PREVIEW` (org-scoped, can create apps) and `vars.FLY_ORG` (the Fly organization slug).
 
 When adding a route: create `app/<group>/<route>/page.tsx`. For an HTTP API endpoint, create `app/api/<route>/route.ts` and export named `GET`/`POST`/etc. functions.
 
