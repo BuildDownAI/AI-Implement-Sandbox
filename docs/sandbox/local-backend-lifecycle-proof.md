@@ -1,4 +1,4 @@
-# Restate local lifecycle fixture
+# Restate local Docker lifecycle fixture
 
 This fixture supports the operator-owned AII-1338 local Docker planning and implementation checks.
 
