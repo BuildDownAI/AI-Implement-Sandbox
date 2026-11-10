@@ -1,4 +1,4 @@
-# Restate local Docker workflow fixture
+# Restate local Docker execution fixture
 
 This fixture supports the operator-owned AII-1338 local Docker planning and implementation checks.
 
