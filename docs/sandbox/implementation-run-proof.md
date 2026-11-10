@@ -1,4 +1,4 @@
-# ImplementationRun sandbox fixture
+# Restate implementation and gap-fill fixture
 
 This fixture supports the [AII-1712](https://linear.app/eudoxus/issue/AII-1712/prove-one-live-implementationrun-on-github-actions) live check of one Restate-owned implementation run on GitHub Actions.
 
